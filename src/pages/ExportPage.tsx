@@ -15,6 +15,7 @@ interface ExportOptions {
   format: 'chatlab' | 'chatlab-jsonl' | 'json' | 'html' | 'txt' | 'excel' | 'sql'
   dateRange: { start: Date; end: Date } | null
   useAllTime: boolean
+  exportAvatars: boolean
 }
 
 interface ExportResult {
@@ -44,7 +45,8 @@ function ExportPage() {
       start: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000),
       end: new Date()
     },
-    useAllTime: true
+    useAllTime: true,
+    exportAvatars: true
   })
 
   const loadSessions = useCallback(async () => {
@@ -143,6 +145,7 @@ function ExportPage() {
       const sessionList = Array.from(selectedSessions)
       const exportOptions = {
         format: options.format,
+        exportAvatars: options.exportAvatars,
         dateRange: options.useAllTime ? null : options.dateRange ? {
           start: Math.floor(options.dateRange.start.getTime() / 1000),
           // 将结束日期设置为当天的 23:59:59,以包含当天的所有消息
@@ -336,6 +339,20 @@ function ExportPage() {
                   <ChevronDown size={14} />
                 </div>
               )}
+            </div>
+          </div>
+
+          <div className="setting-section">
+            <h3>导出头像</h3>
+            <div className="time-options">
+              <label className="checkbox-item">
+                <input
+                  type="checkbox"
+                  checked={options.exportAvatars}
+                  onChange={e => setOptions({ ...options, exportAvatars: e.target.checked })}
+                />
+                <span>导出头像图片</span>
+              </label>
             </div>
           </div>
 
