@@ -39,12 +39,24 @@ jobs:
           outputFile: "release-notes.md"
           configurationJson: |
             {
+              "template": "#  v${{ github.ref_name }} 版本发布\n\n{{CHANGELOG}}\n\n---\n> 此更新由系统自动构建",
               "categories": [
-                { "title": "## 🚀 Features", "labels": ["feat", "feature"] },
-                { "title": "## 🐛 Fixes", "labels": ["fix", "bug"] },
-                { "title": "## 🧰 Maintenance", "labels": ["chore", "refactor", "docs", "perf"] }
+                {
+                  "title": "##  新功能",
+                  "filter": { "pattern": "^feat:.*", "flags": "i" }
+                },
+                {
+                  "title": "##  修复",
+                  "filter": { "pattern": "^fix:.*", "flags": "i" }
+                },
+                {
+                  "title": "##  性能与维护",
+                  "filter": { "pattern": "^(chore|docs|perf|refactor):.*", "flags": "i" }
+                }
               ],
-              "template": "# Release Notes\n\n{{CHANGELOG}}" 
+              "ignore_labels": true,
+              "commitMode": true,
+              "empty_summary": "##  更新详情\n- 常规代码优化与维护"
             }
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -52,5 +64,5 @@ jobs:
       - name: Package and Publish
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        
-        run: npx electron-builder --publish always "-c.releaseInfo.releaseNotesFile=release-notes.md"
+        run: |
+          npx electron-builder --publish always "-c.releaseInfo.releaseNotesFile=release-notes.md"
