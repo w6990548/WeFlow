@@ -442,6 +442,9 @@ function registerIpcHandlers() {
   ipcMain.handle('chat:getVoiceData', async (_, sessionId: string, msgId: string, createTime?: number, serverId?: string | number) => {
     return chatService.getVoiceData(sessionId, msgId, createTime, serverId)
   })
+  ipcMain.handle('chat:resolveVoiceCache', async (_, sessionId: string, msgId: string) => {
+    return chatService.resolveVoiceCache(sessionId, msgId)
+  })
 
   ipcMain.handle('chat:getVoiceTranscript', async (event, sessionId: string, msgId: string) => {
     return chatService.getVoiceTranscript(sessionId, msgId, (text) => {

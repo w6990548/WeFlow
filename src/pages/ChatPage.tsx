@@ -1366,6 +1366,10 @@ function MessageBubble({ message, session, showTime, myAvatarUrl, isGroupChat, o
   const voiceTranscriptRequestedRef = useRef(false)
   const [showImagePreview, setShowImagePreview] = useState(false)
   const [autoTranscribeVoice, setAutoTranscribeVoice] = useState(true)
+  const [voiceCurrentTime, setVoiceCurrentTime] = useState(0)
+  const [voiceDuration, setVoiceDuration] = useState(0)
+  const [voiceWaveform, setVoiceWaveform] = useState<number[]>([])
+  const voiceAutoDecryptTriggered = useRef(false)
 
   // 加载自动转文字配置
   useEffect(() => {
@@ -1658,17 +1662,91 @@ function MessageBubble({ message, session, showTime, myAvatarUrl, isGroupChat, o
     if (!audio) return
     const handlePlay = () => setIsVoicePlaying(true)
     const handlePause = () => setIsVoicePlaying(false)
-    const handleEnded = () => setIsVoicePlaying(false)
+    const handleEnded = () => {
+      setIsVoicePlaying(false)
+      setVoiceCurrentTime(0)
+    }
+    const handleTimeUpdate = () => {
+      setVoiceCurrentTime(audio.currentTime)
+    }
+    const handleLoadedMetadata = () => {
+      setVoiceDuration(audio.duration)
+    }
     audio.addEventListener('play', handlePlay)
     audio.addEventListener('pause', handlePause)
     audio.addEventListener('ended', handleEnded)
+    audio.addEventListener('timeupdate', handleTimeUpdate)
+    audio.addEventListener('loadedmetadata', handleLoadedMetadata)
     return () => {
       audio.pause()
       audio.removeEventListener('play', handlePlay)
       audio.removeEventListener('pause', handlePause)
       audio.removeEventListener('ended', handleEnded)
+      audio.removeEventListener('timeupdate', handleTimeUpdate)
+      audio.removeEventListener('loadedmetadata', handleLoadedMetadata)
     }
   }, [isVoice])
+
+  // 生成波形数据
+  useEffect(() => {
+    if (!voiceDataUrl) {
+      setVoiceWaveform([])
+      return
+    }
+
+    const generateWaveform = async () => {
+      try {
+        // 从 data:audio/wav;base64,... 提取 base64
+        const base64 = voiceDataUrl.split(',')[1]
+        const binaryString = window.atob(base64)
+        const bytes = new Uint8Array(binaryString.length)
+        for (let i = 0; i < binaryString.length; i++) {
+          bytes[i] = binaryString.charCodeAt(i)
+        }
+
+        const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)()
+        const audioBuffer = await audioCtx.decodeAudioData(bytes.buffer)
+        const rawData = audioBuffer.getChannelData(0) // 获取单声道数据
+        const samples = 35 // 波形柱子数量
+        const blockSize = Math.floor(rawData.length / samples)
+        const filteredData: number[] = []
+
+        for (let i = 0; i < samples; i++) {
+          let blockStart = blockSize * i
+          let sum = 0
+          for (let j = 0; j < blockSize; j++) {
+            sum = sum + Math.abs(rawData[blockStart + j])
+          }
+          filteredData.push(sum / blockSize)
+        }
+
+        // 归一化
+        const multiplier = Math.pow(Math.max(...filteredData), -1)
+        const normalizedData = filteredData.map(n => n * multiplier)
+        setVoiceWaveform(normalizedData)
+        void audioCtx.close()
+      } catch (e) {
+        console.error('Failed to generate waveform:', e)
+        // 降级：生成随机但平滑的波形
+        setVoiceWaveform(Array.from({ length: 35 }, () => 0.2 + Math.random() * 0.8))
+      }
+    }
+
+    void generateWaveform()
+  }, [voiceDataUrl])
+
+  // 消息加载时自动检测语音缓存
+  useEffect(() => {
+    if (!isVoice || voiceDataUrl) return
+    window.electronAPI.chat.resolveVoiceCache(session.username, String(message.localId))
+      .then(result => {
+        if (result.success && result.hasCache && result.data) {
+          const url = `data:audio/wav;base64,${result.data}`
+          voiceDataUrlCache.set(voiceCacheKey, url)
+          setVoiceDataUrl(url)
+        }
+      })
+  }, [isVoice, message.localId, session.username, voiceCacheKey, voiceDataUrl])
 
   // 监听流式转写结果
   useEffect(() => {
@@ -1734,7 +1812,7 @@ function MessageBubble({ message, session, showTime, myAvatarUrl, isGroupChat, o
   // 监听模型下载完成事件
   useEffect(() => {
     if (!isVoice) return
-    
+
     const handleModelDownloaded = (event: CustomEvent) => {
       if (event.detail?.messageId === String(message.localId)) {
         // 重置状态，允许重新尝试转写
@@ -1744,7 +1822,7 @@ function MessageBubble({ message, session, showTime, myAvatarUrl, isGroupChat, o
         void requestVoiceTranscript()
       }
     }
-    
+
     window.addEventListener('model-downloaded', handleModelDownloaded as EventListener)
     return () => {
       window.removeEventListener('model-downloaded', handleModelDownloaded as EventListener)
@@ -1932,6 +2010,17 @@ function MessageBubble({ message, session, showTime, myAvatarUrl, isGroupChat, o
         }
       }
 
+      const handleSeek = (e: React.MouseEvent<HTMLDivElement>) => {
+        if (!voiceDataUrl || !voiceAudioRef.current) return
+        e.stopPropagation()
+        const rect = e.currentTarget.getBoundingClientRect()
+        const x = e.clientX - rect.left
+        const percentage = x / rect.width
+        const newTime = percentage * voiceDuration
+        voiceAudioRef.current.currentTime = newTime
+        setVoiceCurrentTime(newTime)
+      }
+
       const showDecryptHint = !voiceDataUrl && !voiceLoading && !isVoicePlaying
       const showTranscript = Boolean(voiceDataUrl) && (voiceTranscriptLoading || voiceTranscriptError || voiceTranscript !== undefined)
       const transcriptText = (voiceTranscript || '').trim()
@@ -1960,12 +2049,30 @@ function MessageBubble({ message, session, showTime, myAvatarUrl, isGroupChat, o
             >
               {isVoicePlaying ? <Pause size={16} /> : <Play size={16} />}
             </button>
-            <div className="voice-wave">
-              <span />
-              <span />
-              <span />
-              <span />
-              <span />
+            <div className="voice-wave" onClick={handleSeek}>
+              {voiceDataUrl && voiceWaveform.length > 0 ? (
+                <div className="voice-waveform">
+                  {voiceWaveform.map((amplitude, i) => {
+                    const progress = (voiceCurrentTime / (voiceDuration || 1))
+                    const isPlayed = (i / voiceWaveform.length) < progress
+                    return (
+                      <div
+                        key={i}
+                        className={`waveform-bar ${isPlayed ? 'played' : ''}`}
+                        style={{ height: `${Math.max(20, amplitude * 100)}%` }}
+                      />
+                    )
+                  })}
+                </div>
+              ) : (
+                <div className="voice-wave-placeholder">
+                  <span />
+                  <span />
+                  <span />
+                  <span />
+                  <span />
+                </div>
+              )}
             </div>
             <div className="voice-info">
               <span className="voice-label">语音</span>

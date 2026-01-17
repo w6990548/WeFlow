@@ -347,9 +347,9 @@ export class WcdbCore {
         this.wcdbGetDbStatus = null
       }
 
-      // wcdb_status wcdb_get_voice_data(wcdb_handle handle, const char* session_id, int32_t create_time, const char* candidates_json, char** out_hex)
+      // wcdb_status wcdb_get_voice_data(wcdb_handle handle, const char* session_id, int32_t create_time, int32_t local_id, int64_t svr_id, const char* candidates_json, char** out_hex)
       try {
-        this.wcdbGetVoiceData = this.lib.func('int32 wcdb_get_voice_data(int64 handle, const char* sessionId, int32 createTime, int64 svrId, const char* candidatesJson, _Out_ void** outHex)')
+        this.wcdbGetVoiceData = this.lib.func('int32 wcdb_get_voice_data(int64 handle, const char* sessionId, int32 createTime, int32 localId, int64 svrId, const char* candidatesJson, _Out_ void** outHex)')
       } catch {
         this.wcdbGetVoiceData = null
       }
@@ -1321,12 +1321,12 @@ export class WcdbCore {
     }
   }
 
-  async getVoiceData(sessionId: string, createTime: number, candidates: string[], svrId: string | number = 0): Promise<{ success: boolean; hex?: string; error?: string }> {
+  async getVoiceData(sessionId: string, createTime: number, candidates: string[], localId: number = 0, svrId: string | number = 0): Promise<{ success: boolean; hex?: string; error?: string }> {
     if (!this.ensureReady()) return { success: false, error: 'WCDB 未连接' }
     if (!this.wcdbGetVoiceData) return { success: false, error: '当前 DLL 版本不支持获取语音数据' }
     try {
       const outPtr = [null as any]
-      const result = this.wcdbGetVoiceData(this.handle, sessionId, createTime, BigInt(svrId || 0), JSON.stringify(candidates), outPtr)
+      const result = this.wcdbGetVoiceData(this.handle, sessionId, createTime, localId, BigInt(svrId || 0), JSON.stringify(candidates), outPtr)
       if (result !== 0 || !outPtr[0]) {
         return { success: false, error: `获取语音数据失败: ${result}` }
       }

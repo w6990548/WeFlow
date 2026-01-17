@@ -99,7 +99,7 @@ export class WcdbService {
   setPaths(resourcesPath: string, userDataPath: string): void {
     this.resourcesPath = resourcesPath
     this.userDataPath = userDataPath
-    this.callWorker('setPaths', { resourcesPath, userDataPath }).catch(() => {})
+    this.callWorker('setPaths', { resourcesPath, userDataPath }).catch(() => { })
   }
 
   /**
@@ -107,7 +107,7 @@ export class WcdbService {
    */
   setLogEnabled(enabled: boolean): void {
     this.logEnabled = enabled
-    this.callWorker('setLogEnabled', { enabled }).catch(() => {})
+    this.callWorker('setLogEnabled', { enabled }).catch(() => { })
   }
 
   /**
@@ -346,8 +346,8 @@ export class WcdbService {
   /**
    * 获取语音数据
    */
-  async getVoiceData(sessionId: string, createTime: number, candidates: string[], svrId: string | number = 0): Promise<{ success: boolean; hex?: string; error?: string }> {
-    return this.callWorker('getVoiceData', { sessionId, createTime, candidates, svrId })
+  async getVoiceData(sessionId: string, createTime: number, candidates: string[], localId: number = 0, svrId: string | number = 0): Promise<{ success: boolean; hex?: string; error?: string }> {
+    return this.callWorker('getVoiceData', { sessionId, createTime, candidates, localId, svrId })
   }
 
 }

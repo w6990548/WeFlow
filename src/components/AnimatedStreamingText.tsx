@@ -44,12 +44,22 @@ export const AnimatedStreamingText = memo(({ text, className, loading }: Animate
             ))}
             <style>{`
         .fade-in-text {
-          animation: fadeIn 0.5s ease-out forwards;
+          animation: premiumFadeIn 0.8s cubic-bezier(0.16, 1, 0.3, 1) forwards;
           opacity: 0;
+          display: inline-block;
+          filter: blur(4px);
         }
-        @keyframes fadeIn {
-          from { opacity: 0; transform: translateY(2px); }
-          to { opacity: 1; transform: translateY(0); }
+        @keyframes premiumFadeIn {
+          from { 
+            opacity: 0; 
+            transform: translateY(4px) scale(0.98);
+            filter: blur(4px);
+          }
+          to { 
+            opacity: 1; 
+            transform: translateY(0) scale(1);
+            filter: blur(0);
+          }
         }
         .dot-flashing {
            animation: blink 1s infinite;

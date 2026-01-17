@@ -111,7 +111,7 @@ if (parentPort) {
                     result = await core.getMessageById(payload.sessionId, payload.localId)
                     break
                 case 'getVoiceData':
-                    result = await core.getVoiceData(payload.sessionId, payload.createTime, payload.candidates, payload.svrId)
+                    result = await core.getVoiceData(payload.sessionId, payload.createTime, payload.candidates, payload.localId, payload.svrId)
                     if (!result.success) {
                         console.error('[wcdbWorker] getVoiceData failed:', result.error)
                     }

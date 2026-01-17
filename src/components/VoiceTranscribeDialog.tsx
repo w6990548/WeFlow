@@ -102,7 +102,7 @@ export const VoiceTranscribeDialog: React.FC<VoiceTranscribeDialogProps> = ({
                                     </div>
                                     <div className="model-item">
                                         <span className="label">支持语言：</span>
-                                        <span className="value">中文、英文、日文、韩文</span>
+                                        <span className="value">中文、粤语、英文、日文、韩文</span>
                                     </div>
                                 </div>
                             </div>

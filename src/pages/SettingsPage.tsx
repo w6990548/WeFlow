@@ -126,14 +126,14 @@ function SettingsPage() {
       setLogEnabled(savedLogEnabled)
       setAutoTranscribeVoice(savedAutoTranscribe)
       setTranscribeLanguages(savedTranscribeLanguages)
-      
+
       // 如果语言列表为空，保存默认值
       if (!savedTranscribeLanguages || savedTranscribeLanguages.length === 0) {
         const defaultLanguages = ['zh']
         setTranscribeLanguages(defaultLanguages)
         await configService.setTranscribeLanguages(defaultLanguages)
       }
-      
+
       if (savedWhisperModelDir) setWhisperModelDir(savedWhisperModelDir)
     } catch (e) {
       console.error('加载配置失败:', e)
@@ -776,6 +776,7 @@ function SettingsPage() {
         <div className="language-checkboxes">
           {[
             { code: 'zh', name: '中文' },
+            { code: 'yue', name: '粤语' },
             { code: 'en', name: '英文' },
             { code: 'ja', name: '日文' },
             { code: 'ko', name: '韩文' }
@@ -787,32 +788,33 @@ function SettingsPage() {
                 onChange={async (e) => {
                   const checked = e.target.checked
                   let newLanguages: string[]
-                  
+
                   if (checked) {
-                    // 添加语言
                     newLanguages = [...transcribeLanguages, lang.code]
                   } else {
-                    // 移除语言，但至少保留一个
                     if (transcribeLanguages.length <= 1) {
                       showMessage('至少需要选择一种语言', false)
                       return
                     }
                     newLanguages = transcribeLanguages.filter(l => l !== lang.code)
                   }
-                  
+
                   setTranscribeLanguages(newLanguages)
                   await configService.setTranscribeLanguages(newLanguages)
                   showMessage(`已${checked ? '添加' : '移除'}${lang.name}`, true)
                 }}
               />
-              <span className="checkbox-label">{lang.name}</span>
+              <div className="checkbox-custom">
+                <Check size={14} />
+                <span>{lang.name}</span>
+              </div>
             </label>
           ))}
         </div>
       </div>
       <div className="form-group whisper-section">
         <label>语音识别模型 (SenseVoiceSmall)</label>
-        <span className="form-hint">基于 Sherpa-onnx，支持中文、英文、日文、韩文</span>
+        <span className="form-hint">基于 Sherpa-onnx，支持中、粤、英、日、韩及情感/事件识别</span>
         <span className="form-hint">模型下载目录</span>
         <input
           type="text"
@@ -833,14 +835,19 @@ function SettingsPage() {
         </div>
         {isWhisperDownloading ? (
           <div className="whisper-progress">
-            <div className="progress-bar">
-              <div className="progress-fill" style={{ width: `${whisperDownloadProgress}%` }} />
+            <div className="progress-info">
+              <span>正在准备模型文件...</span>
+              <span className="percent">{whisperDownloadProgress.toFixed(0)}%</span>
             </div>
-            <span>{whisperDownloadProgress.toFixed(0)}%</span>
+            <div className="progress-bar-container">
+              <div className="progress-bar">
+                <div className="progress-fill" style={{ width: `${whisperDownloadProgress}%` }} />
+              </div>
+            </div>
           </div>
         ) : (
-          <button className="btn btn-primary" onClick={handleDownloadWhisperModel}>
-            <Download size={16} /> 下载模型
+          <button className="btn btn-primary btn-download-model" onClick={handleDownloadWhisperModel}>
+            <Download size={18} /> 下载模型
           </button>
         )}
       </div>

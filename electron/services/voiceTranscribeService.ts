@@ -14,7 +14,6 @@ type ModelInfo = {
   files: {
     model: string
     tokens: string
-    vad: string
   }
   sizeBytes: number
   sizeLabel: string
@@ -31,8 +30,7 @@ const SENSEVOICE_MODEL: ModelInfo = {
   name: 'SenseVoiceSmall',
   files: {
     model: 'model.int8.onnx',
-    tokens: 'tokens.txt',
-    vad: 'silero_vad.onnx'
+    tokens: 'tokens.txt'
   },
   sizeBytes: 245_000_000,
   sizeLabel: '245 MB'
@@ -40,8 +38,7 @@ const SENSEVOICE_MODEL: ModelInfo = {
 
 const MODEL_DOWNLOAD_URLS = {
   model: 'https://modelscope.cn/models/pengzhendong/sherpa-onnx-sense-voice-zh-en-ja-ko-yue/resolve/master/model.int8.onnx',
-  tokens: 'https://modelscope.cn/models/pengzhendong/sherpa-onnx-sense-voice-zh-en-ja-ko-yue/resolve/master/tokens.txt',
-  vad: 'https://www.modelscope.cn/models/manyeyes/silero-vad-onnx/resolve/master/silero_vad.onnx'
+  tokens: 'https://modelscope.cn/models/pengzhendong/sherpa-onnx-sense-voice-zh-en-ja-ko-yue/resolve/master/tokens.txt'
 }
 
 export class VoiceTranscribeService {
@@ -74,12 +71,9 @@ export class VoiceTranscribeService {
     try {
       const modelPath = this.resolveModelPath(SENSEVOICE_MODEL.files.model)
       const tokensPath = this.resolveModelPath(SENSEVOICE_MODEL.files.tokens)
-      const vadPath = this.resolveModelPath((SENSEVOICE_MODEL.files as any).vad)
-
       const modelExists = existsSync(modelPath)
       const tokensExists = existsSync(tokensPath)
-      const vadExists = existsSync(vadPath)
-      const exists = modelExists && tokensExists && vadExists
+      const exists = modelExists && tokensExists
 
       if (!exists) {
         return { success: true, exists: false, modelPath, tokensPath }
@@ -87,8 +81,7 @@ export class VoiceTranscribeService {
 
       const modelSize = statSync(modelPath).size
       const tokensSize = statSync(tokensPath).size
-      const vadSize = statSync(vadPath).size
-      const totalSize = modelSize + tokensSize + vadSize
+      const totalSize = modelSize + tokensSize
 
       return {
         success: true,
@@ -121,7 +114,6 @@ export class VoiceTranscribeService {
 
         const modelPath = this.resolveModelPath(SENSEVOICE_MODEL.files.model)
         const tokensPath = this.resolveModelPath(SENSEVOICE_MODEL.files.tokens)
-        const vadPath = this.resolveModelPath((SENSEVOICE_MODEL.files as any).vad)
 
         // 初始进度
         onProgress?.({
@@ -166,35 +158,16 @@ export class VoiceTranscribeService {
           }
         )
 
-        // 下载 vad 文件 (30%)
-        console.info('[VoiceTranscribe] 开始下载 VAD 文件...')
-        await this.downloadToFile(
-          (MODEL_DOWNLOAD_URLS as any).vad,
-          vadPath,
-          'vad',
-          (downloaded, total) => {
-            const modelSize = existsSync(modelPath) ? statSync(modelPath).size : 0
-            const tokensSize = existsSync(tokensPath) ? statSync(tokensPath).size : 0
-            const percent = total ? 70 + (downloaded / total) * 30 : 70
-            onProgress?.({
-              modelName: SENSEVOICE_MODEL.name,
-              downloadedBytes: modelSize + tokensSize + downloaded,
-              totalBytes: SENSEVOICE_MODEL.sizeBytes,
-              percent
-            })
-          }
-        )
+        console.info('[VoiceTranscribe] 模型下载完成')
 
         console.info('[VoiceTranscribe] 所有文件下载完成')
         return { success: true, modelPath, tokensPath }
       } catch (error) {
         const modelPath = this.resolveModelPath(SENSEVOICE_MODEL.files.model)
         const tokensPath = this.resolveModelPath(SENSEVOICE_MODEL.files.tokens)
-        const vadPath = this.resolveModelPath((SENSEVOICE_MODEL.files as any).vad)
         try {
           if (existsSync(modelPath)) unlinkSync(modelPath)
           if (existsSync(tokensPath)) unlinkSync(tokensPath)
-          if (existsSync(vadPath)) unlinkSync(vadPath)
         } catch { }
         return { success: false, error: String(error) }
       } finally {
@@ -230,7 +203,7 @@ export class VoiceTranscribeService {
           supportedLanguages = this.configService.get('transcribeLanguages')
           // 如果配置中也没有或为空，使用默认值
           if (!supportedLanguages || supportedLanguages.length === 0) {
-            supportedLanguages = ['zh']
+            supportedLanguages = ['zh', 'yue']
           }
         }
 
@@ -303,7 +276,7 @@ export class VoiceTranscribeService {
 
       const request = protocol.get(url, options, (response) => {
         console.info(`[VoiceTranscribe] ${fileName} 响应状态:`, response.statusCode)
-        
+
         // 处理重定向
         if ([301, 302, 303, 307, 308].includes(response.statusCode || 0) && response.headers.location) {
           if (remainingRedirects <= 0) {
@@ -324,11 +297,11 @@ export class VoiceTranscribeService {
 
         const totalBytes = Number(response.headers['content-length'] || 0) || undefined
         let downloadedBytes = 0
-        
+
         console.info(`[VoiceTranscribe] ${fileName} 文件大小:`, totalBytes ? `${(totalBytes / 1024 / 1024).toFixed(2)} MB` : '未知')
 
         const writer = createWriteStream(targetPath)
-        
+
         // 设置数据接收超时（60秒没有数据则超时）
         let lastDataTime = Date.now()
         const dataTimeout = setInterval(() => {
@@ -392,7 +365,7 @@ export class VoiceTranscribeService {
         // sherpa-onnx 的 recognizer 可能需要手动释放
         this.recognizer = null
       } catch (error) {
-        }
+      }
     }
   }
 }

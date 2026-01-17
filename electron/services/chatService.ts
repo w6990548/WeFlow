@@ -2202,7 +2202,7 @@ class ChatService {
 
 
       // 3. 调用 C++ 接口获取语音 (Hex)
-      const voiceRes = await wcdbService.getVoiceData(sessionId, msgCreateTime, candidates, msgSvrId)
+      const voiceRes = await wcdbService.getVoiceData(sessionId, msgCreateTime, candidates, localId, msgSvrId)
       if (!voiceRes.success || !voiceRes.hex) {
         return { success: false, error: voiceRes.error || '未找到语音数据' }
       }
@@ -2242,6 +2242,33 @@ class ChatService {
     } catch (e) {
       console.error('ChatService: getVoiceData 失败:', e)
       return { success: false, error: String(e) }
+    }
+  }
+
+  /**
+   * 检查语音是否已有缓存
+   */
+  async resolveVoiceCache(sessionId: string, msgId: string): Promise<{ success: boolean; hasCache: boolean; data?: string }> {
+    try {
+      const cacheKey = this.getVoiceCacheKey(sessionId, msgId)
+
+      // 1. 检查内存缓存
+      const inMemory = this.voiceWavCache.get(cacheKey)
+      if (inMemory) {
+        return { success: true, hasCache: true, data: inMemory.toString('base64') }
+      }
+
+      // 2. 检查文件缓存
+      const cachedFile = this.getVoiceCacheFilePath(cacheKey)
+      if (existsSync(cachedFile)) {
+        const wavData = readFileSync(cachedFile)
+        this.cacheVoiceWav(cacheKey, wavData) // 回甜内存
+        return { success: true, hasCache: true, data: wavData.toString('base64') }
+      }
+
+      return { success: true, hasCache: false }
+    } catch (e) {
+      return { success: false, hasCache: false }
     }
   }
 

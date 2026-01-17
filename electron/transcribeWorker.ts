@@ -1,5 +1,4 @@
 ﻿import { parentPort, workerData } from 'worker_threads'
-import * as fs from 'fs'
 
 interface WorkerParams {
     modelPath: string
@@ -18,16 +17,66 @@ const LANGUAGE_TAGS: Record<string, string> = {
     'yue': '<|yue|>' // 粤语
 }
 
+// 技术标签（识别语言、语速、ITN等），需要从最终文本中移除
+const TECH_TAGS = [
+    '<|zh|>', '<|en|>', '<|ja|>', '<|ko|>', '<|yue|>',
+    '<|nospeech|>', '<|speech|>',
+    '<|itn|>', '<|wo_itn|>',
+    '<|NORMAL|>'
+]
+
+// 情感与事件标签映射，转换为直观的 Emoji
+const RICH_TAG_MAP: Record<string, string> = {
+    '<|HAPPY|>': '😊',
+    '<|SAD|>': '😔',
+    '<|ANGRY|>': '😠',
+    '<|NEUTRAL|>': '', // 中性情感不特别标记
+    '<|FEARFUL|>': '😨',
+    '<|DISGUSTED|>': '🤢',
+    '<|SURPRISED|>': '😮',
+    '<|BGM|>': '🎵',
+    '<|Applause|>': '👏',
+    '<|Laughter|>': '😂',
+    '<|Cry|>': '😭',
+    '<|Cough|>': ' (咳嗽) ',
+    '<|Sneeze|>': ' (喷嚏) ',
+}
+
+/**
+ * 富文本后处理：移除技术标签，转换识别出的情感和声音事件
+ */
+function richTranscribePostProcess(text: string): string {
+    if (!text) return ''
+
+    let processed = text
+
+    // 1. 转换情感和事件标签
+    for (const [tag, replacement] of Object.entries(RICH_TAG_MAP)) {
+        // 使用正则全局替换，不区分大小写以防不同版本差异
+        const escapedTag = tag.replace(/[|<>]/g, '\\$&')
+        processed = processed.replace(new RegExp(escapedTag, 'gi'), replacement)
+    }
+
+    // 2. 移除所有剩余的技术标签
+    for (const tag of TECH_TAGS) {
+        const escapedTag = tag.replace(/[|<>]/g, '\\$&')
+        processed = processed.replace(new RegExp(escapedTag, 'gi'), '')
+    }
+
+    // 3. 清理多余空格并返回
+    return processed.replace(/\s+/g, ' ').trim()
+}
+
 // 检查识别结果是否在允许的语言列表中
 function isLanguageAllowed(result: any, allowedLanguages: string[]): boolean {
     if (!result || !result.lang) {
-        // 如果没有语言信息，默认允许
+        // 如果没有语言信息，默认允许（或从文本开头尝试提取）
         return true
     }
 
-    // 如果没有指定语言或语言列表为空，默认只允许中文
+    // 如果没有指定语言或语言列表为空，默认允许中文和粤语
     if (!allowedLanguages || allowedLanguages.length === 0) {
-        allowedLanguages = ['zh']
+        allowedLanguages = ['zh', 'yue']
     }
 
     const langTag = result.lang
@@ -55,7 +104,7 @@ async function run() {
         let sherpa: any;
         try {
             sherpa = require('sherpa-onnx-node');
-            } catch (requireError) {
+        } catch (requireError) {
             parentPort.postMessage({ type: 'error', error: 'Failed to load speech engine: ' + String(requireError) });
             return;
         }
@@ -65,11 +114,11 @@ async function run() {
         // 确保有有效的语言列表，默认只允许中文
         let allowedLanguages = languages || ['zh']
         if (allowedLanguages.length === 0) {
-          allowedLanguages = ['zh']
+            allowedLanguages = ['zh']
         }
-        
+
         console.log('[TranscribeWorker] 使用的语言白名单:', allowedLanguages)
-        
+
         // 1. 初始化识别器 (SenseVoiceSmall)
         const recognizerConfig = {
             modelConfig: {
@@ -83,121 +132,30 @@ async function run() {
             }
         }
         const recognizer = new sherpa.OfflineRecognizer(recognizerConfig)
-        // 2. 初始化 VAD (用于流式输出效果)
-        const vadPath = modelPath.replace('model.int8.onnx', 'silero_vad.onnx');
-        const vadConfig = {
-            sileroVad: {
-                model: vadPath,
-                threshold: 0.5,
-                minSilenceDuration: 0.5,
-                minSpeechDuration: 0.25,
-                windowSize: 512
-            },
-            sampleRate: sampleRate,
-            debug: 0,
-            numThreads: 1
-        }
 
-        // 检查 VAD 模型是否存在，如果不存在则退回到全量识别
-        if (!fs.existsSync(vadPath)) {
-            const pcmData = wavData.slice(44)
-            const samples = new Float32Array(pcmData.length / 2)
-            for (let i = 0; i < samples.length; i++) {
-                samples[i] = pcmData.readInt16LE(i * 2) / 32768.0
-            }
-
-            const stream = recognizer.createStream()
-            stream.acceptWaveform({ sampleRate, samples })
-            recognizer.decode(stream)
-            const result = recognizer.getResult(stream)
-
-            console.log('[TranscribeWorker] 非VAD模式 - 识别结果对象:', JSON.stringify(result, null, 2))
-            
-            // 检查语言是否在白名单中
-            if (isLanguageAllowed(result, allowedLanguages)) {
-                console.log('[TranscribeWorker] 非VAD模式 - 保留文本:', result.text)
-                parentPort.postMessage({ type: 'final', text: result.text })
-            } else {
-                console.log('[TranscribeWorker] 非VAD模式 - 语言不匹配，返回空文本')
-                parentPort.postMessage({ type: 'final', text: '' })
-            }
-            return
-        }
-
-        const vad = new sherpa.Vad(vadConfig, 60) // 60s max
-        // 3. 处理音频数据
+        // 2. 处理音频数据 (全量识别)
         const pcmData = wavData.slice(44)
         const samples = new Float32Array(pcmData.length / 2)
         for (let i = 0; i < samples.length; i++) {
             samples[i] = pcmData.readInt16LE(i * 2) / 32768.0
         }
 
-        // 模拟流式输入：按小块喂给 VAD
-        const chunkSize = 1600 // 100ms for 16kHz
-        let offset = 0
-        let accumulatedText = ''
+        const stream = recognizer.createStream()
+        stream.acceptWaveform({ sampleRate, samples })
+        recognizer.decode(stream)
+        const result = recognizer.getResult(stream)
 
-        let segmentCount = 0;
+        console.log('[TranscribeWorker] 识别完成 - 结果对象:', JSON.stringify(result, null, 2))
 
-        while (offset < samples.length) {
-            const end = Math.min(offset + chunkSize, samples.length)
-            const chunk = samples.subarray(offset, end)
-
-            vad.acceptWaveform(chunk)
-
-            // 检查 ASR 结果
-            while (!vad.isEmpty()) {
-                const segment = vad.front(false)
-
-                const stream = recognizer.createStream()
-                stream.acceptWaveform({ sampleRate, samples: segment.samples })
-                recognizer.decode(stream)
-                const result = recognizer.getResult(stream)
-
-                console.log('[TranscribeWorker] 识别结果 - lang:', result.lang, 'text:', result.text)
-                
-                // 检查语言是否在白名单中
-                if (result.text && isLanguageAllowed(result, allowedLanguages)) {
-                    const text = result.text.trim()
-                    if (text.length > 0) {
-                        accumulatedText += (accumulatedText ? ' ' : '') + text
-                        segmentCount++;
-                        parentPort.postMessage({ type: 'partial', text: accumulatedText })
-                    }
-                } else if (result.text) {
-                    console.log('[TranscribeWorker] 跳过不匹配的语言段落')
-                }
-                vad.pop()
-            }
-
-            offset = end
-            // 让出主循环，保持响应
-            await new Promise(resolve => setImmediate(resolve))
+        // 3. 检查语言是否在白名单中
+        if (isLanguageAllowed(result, allowedLanguages)) {
+            const processedText = richTranscribePostProcess(result.text)
+            console.log('[TranscribeWorker] 语言匹配，返回文本:', processedText)
+            parentPort.postMessage({ type: 'final', text: processedText })
+        } else {
+            console.log('[TranscribeWorker] 语言不匹配，返回空文本')
+            parentPort.postMessage({ type: 'final', text: '' })
         }
-
-        // Ensure any remaining buffer is processed
-        vad.flush();
-        while (!vad.isEmpty()) {
-            const segment = vad.front(false);
-            const stream = recognizer.createStream()
-            stream.acceptWaveform({ sampleRate, samples: segment.samples })
-            recognizer.decode(stream)
-            const result = recognizer.getResult(stream)
-            
-            console.log('[TranscribeWorker] flush阶段 - lang:', result.lang, 'text:', result.text)
-            
-            // 检查语言是否在白名单中
-            if (result.text && isLanguageAllowed(result, allowedLanguages)) {
-                const text = result.text.trim()
-                if (text) {
-                    accumulatedText += (accumulatedText ? ' ' : '') + text
-                    parentPort.postMessage({ type: 'partial', text: accumulatedText })
-                }
-            }
-            vad.pop();
-        }
-
-        parentPort.postMessage({ type: 'final', text: accumulatedText })
 
     } catch (error) {
         parentPort.postMessage({ type: 'error', error: String(error) })

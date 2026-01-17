@@ -1108,6 +1108,14 @@
       border-radius: 16px;
     }
   }
+
+  // 使发送的语音消息和转文字也使用接收者的样式 (浅色)
+  &.sent.voice {
+    .bubble-content {
+      background: var(--bg-secondary);
+      color: var(--text-primary);
+    }
+  }
 }
 
 .bubble-avatar {
@@ -1309,10 +1317,6 @@
   gap: 6px;
 }
 
-.message-bubble.sent .voice-message {
-  background: rgba(255, 255, 255, 0.18);
-}
-
 .voice-play-btn {
   width: 32px;
   height: 32px;
@@ -1331,6 +1335,50 @@
 }
 
 .voice-wave {
+  display: flex;
+  align-items: flex-end;
+  gap: 3px;
+  height: 18px;
+
+  span {
+    width: 3px;
+    height: 8px;
+    border-radius: 2px;
+    background: var(--text-tertiary);
+    opacity: 0.6;
+  }
+}
+
+.voice-waveform {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: 24px;
+  min-width: 120px;
+}
+
+.waveform-bar {
+  flex: 1;
+  width: 2px;
+  background: rgba(0, 0, 0, 0.1);
+  border-radius: 1px;
+  transition: transform 0.2s ease, background 0.2s ease;
+
+  &.played {
+    background: var(--primary);
+  }
+}
+
+.message-bubble.sent.voice .waveform-bar {
+  background: rgba(0, 0, 0, 0.1); // 基色改为透明黑
+
+  &.played {
+    background: var(--primary);
+  }
+}
+
+.voice-wave-placeholder {
   display: flex;
   align-items: flex-end;
   gap: 3px;
@@ -1403,21 +1451,11 @@
   border-radius: 14px;
   font-size: 13px;
   line-height: 1.5;
-  background: var(--bg-secondary);
+  background: var(--card-bg);
   color: var(--text-primary);
   border: 1px solid var(--border-color);
   word-break: break-word;
   white-space: pre-wrap;
-}
-
-.voice-transcript.sent {
-  background: rgba(255, 255, 255, 0.9);
-  color: #333333;
-  border-color: transparent;
-}
-
-.voice-transcript.received {
-  background: var(--card-bg);
 }
 
 .voice-transcript.error {
@@ -1882,6 +1920,7 @@
     transform: translateX(0);
   }
 }
+
 /* 语音转文字按钮样式 */
 .voice-transcribe-btn {
   width: 28px;
