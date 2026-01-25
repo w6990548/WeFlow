@@ -440,8 +440,8 @@ function WelcomePage({ standalone = false }: WelcomePageProps) {
                   <FolderOpen size={16} /> 浏览选择
                 </button>
               </div>
-              <div className="field-hint">请选择微信-设置-存储位置对应的目录</div>
-              <div className="field-hint" style={{ color: '#ff6b6b', marginTop: '4px' }}>⚠️ 目录路径不可包含中文，如有中文请去微信-设置-存储位置点击更改，迁移至全英文目录</div>
+              <div className="field-hint" style={{ color: '#ff6b6b', fontSize: '14px', fontWeight: '500' }}>请选择微信-设置-存储位置对应的目录</div>
+              <div className="field-hint" style={{ color: '#ff6b6b', marginTop: '4px', fontSize: '14px', fontWeight: '500' }}>⚠️ 目录路径不可包含中文，如有中文请去微信-设置-存储位置点击更改，迁移至全英文目录</div>
             </div>
           )}
 
@@ -506,7 +506,7 @@ function WelcomePage({ standalone = false }: WelcomePageProps) {
 
               {dbKeyStatus && <div className="field-hint status-text">{dbKeyStatus}</div>}
               <div className="field-hint">获取密钥会自动识别最近登录的账号</div>
-              <div className="field-hint">点击自动获取后微信将重新启动，当页面提示<span style={{color: 'red'}}>hook安装成功，现在登录微信</span>后再点击登录</div>
+              <div className="field-hint">点击自动获取后微信将重新启动，当页面提示<span style={{ color: 'red' }}>hook安装成功，现在登录微信</span>后再点击登录</div>
             </div>
           )}
 

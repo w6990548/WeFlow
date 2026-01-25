@@ -2006,6 +2006,11 @@ class ExportService {
       )
 
       const detailedExport: any = {
+        weflow: {
+          version: '1.0.3',
+          exportedAt: Math.floor(Date.now() / 1000),
+          generator: 'WeFlow'
+        },
         session: {
           wxid: sessionId,
           nickname: sessionNickname,
