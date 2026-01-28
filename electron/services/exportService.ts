@@ -10,6 +10,7 @@ import { wcdbService } from './wcdbService'
 import { imageDecryptService } from './imageDecryptService'
 import { chatService } from './chatService'
 import { videoService } from './videoService'
+import { voiceTranscribeService } from './voiceTranscribeService'
 import { EXPORT_HTML_STYLES } from './exportHtmlStyles'
 
 // ChatLab 格式类型定义
@@ -1032,15 +1033,15 @@ class ExportService {
   /**
    * 转写语音为文字
    */
-  private async transcribeVoice(sessionId: string, msgId: string): Promise<string> {
+  private async transcribeVoice(sessionId: string, msgId: string, createTime: number, senderWxid: string | null): Promise<string> {
     try {
-      const transcript = await chatService.getVoiceTranscript(sessionId, msgId)
+      const transcript = await chatService.getVoiceTranscript(sessionId, msgId, createTime, undefined, senderWxid || undefined)
       if (transcript.success && transcript.transcript) {
         return `[语音转文字] ${transcript.transcript}`
       }
-      return '[语音消息 - 转文字失败]'
+      return `[语音消息 - 转文字失败: ${transcript.error || '未知错误'}]`
     } catch (e) {
-      return '[语音消息 - 转文字失败]'
+      return `[语音消息 - 转文字失败: ${String(e)}]`
     }
   }
 
@@ -1655,6 +1656,10 @@ class ExportService {
         phase: 'preparing'
       })
 
+      if (options.exportVoiceAsText) {
+        await this.ensureVoiceModel(onProgress)
+      }
+
       const collected = await this.collectMessages(sessionId, cleanedMyWxid, options.dateRange)
       const allMessages = collected.rows
       if (isGroup) {
@@ -1719,7 +1724,7 @@ class ExportService {
         // 并行转写语音，限制 4 个并发（转写比较耗资源）
         const VOICE_CONCURRENCY = 4
         await parallelLimit(voiceMessages, VOICE_CONCURRENCY, async (msg) => {
-          const transcript = await this.transcribeVoice(sessionId, String(msg.localId))
+          const transcript = await this.transcribeVoice(sessionId, String(msg.localId), msg.createTime, msg.senderUsername)
           voiceTranscriptMap.set(msg.localId, transcript)
         })
       }
@@ -1849,6 +1854,10 @@ class ExportService {
         phase: 'preparing'
       })
 
+      if (options.exportVoiceAsText) {
+        await this.ensureVoiceModel(onProgress)
+      }
+
       const collected = await this.collectMessages(sessionId, cleanedMyWxid, options.dateRange)
       const { exportMediaEnabled, mediaRootDir, mediaRelativePrefix } = this.getMediaLayout(outputPath, options)
 
@@ -1904,7 +1913,7 @@ class ExportService {
 
         const VOICE_CONCURRENCY = 4
         await parallelLimit(voiceMessages, VOICE_CONCURRENCY, async (msg) => {
-          const transcript = await this.transcribeVoice(sessionId, String(msg.localId))
+          const transcript = await this.transcribeVoice(sessionId, String(msg.localId), msg.createTime, msg.senderUsername)
           voiceTranscriptMap.set(msg.localId, transcript)
         })
       }
@@ -2088,6 +2097,10 @@ class ExportService {
         phase: 'preparing'
       })
 
+      if (options.exportVoiceAsText) {
+        await this.ensureVoiceModel(onProgress)
+      }
+
       const collected = await this.collectMessages(sessionId, cleanedMyWxid, options.dateRange)
 
 
@@ -2202,11 +2215,11 @@ class ExportService {
       }
 
       // 预加载群昵称 (仅群聊且完整列模式)
-      console.log('🔍 预加载群昵称检查: isGroup=', isGroup, 'useCompactColumns=', useCompactColumns, 'sessionId=', sessionId)
+      console.log('预加载群昵称检查: isGroup=', isGroup, 'useCompactColumns=', useCompactColumns, 'sessionId=', sessionId)
       const groupNicknamesMap = (isGroup && !useCompactColumns)
         ? await this.getGroupNicknamesForRoom(sessionId)
         : new Map<string, string>()
-      console.log('🔍 群昵称Map大小:', groupNicknamesMap.size)
+      console.log('群昵称Map大小:', groupNicknamesMap.size)
 
 
       // 填充数据
@@ -2267,7 +2280,7 @@ class ExportService {
 
         const VOICE_CONCURRENCY = 4
         await parallelLimit(voiceMessages, VOICE_CONCURRENCY, async (msg) => {
-          const transcript = await this.transcribeVoice(sessionId, String(msg.localId))
+          const transcript = await this.transcribeVoice(sessionId, String(msg.localId), msg.createTime, msg.senderUsername)
           voiceTranscriptMap.set(msg.localId, transcript)
         })
       }
@@ -2418,6 +2431,41 @@ class ExportService {
   }
 
   /**
+    * 确保语音转写模型已下载
+    */
+  private async ensureVoiceModel(onProgress?: (progress: ExportProgress) => void): Promise<boolean> {
+    try {
+      const status = await voiceTranscribeService.getModelStatus()
+      if (status.success && status.exists) {
+        return true
+      }
+
+      onProgress?.({
+        current: 0,
+        total: 100,
+        currentSession: '正在下载 AI 模型',
+        phase: 'preparing'
+      })
+
+      const downloadResult = await voiceTranscribeService.downloadModel((progress: any) => {
+        if (progress.percent !== undefined) {
+          onProgress?.({
+            current: progress.percent,
+            total: 100,
+            currentSession: `正在下载 AI 模型 (${progress.percent.toFixed(0)}%)`,
+            phase: 'preparing'
+          })
+        }
+      })
+
+      return downloadResult.success
+    } catch (e) {
+      console.error('Auto download model failed:', e)
+      return false
+    }
+  }
+
+  /**
    * 导出单个会话为 TXT 格式（默认与 Excel 精简列一致）
    */
   async exportSessionToTxt(
@@ -2441,6 +2489,10 @@ class ExportService {
         currentSession: sessionInfo.displayName,
         phase: 'preparing'
       })
+
+      if (options.exportVoiceAsText) {
+        await this.ensureVoiceModel(onProgress)
+      }
 
       const collected = await this.collectMessages(sessionId, cleanedMyWxid, options.dateRange)
       const sortedMessages = collected.rows.sort((a, b) => a.createTime - b.createTime)
@@ -2495,7 +2547,7 @@ class ExportService {
 
         const VOICE_CONCURRENCY = 4
         await parallelLimit(voiceMessages, VOICE_CONCURRENCY, async (msg) => {
-          const transcript = await this.transcribeVoice(sessionId, String(msg.localId))
+          const transcript = await this.transcribeVoice(sessionId, String(msg.localId), msg.createTime, msg.senderUsername)
           voiceTranscriptMap.set(msg.localId, transcript)
         })
       }
@@ -2613,6 +2665,10 @@ class ExportService {
         phase: 'preparing'
       })
 
+      if (options.exportVoiceAsText) {
+        await this.ensureVoiceModel(onProgress)
+      }
+
       const collected = await this.collectMessages(sessionId, cleanedMyWxid, options.dateRange)
       if (isGroup) {
         await this.mergeGroupMembers(sessionId, collected.memberSet, options.exportAvatars === true)
@@ -2673,7 +2729,7 @@ class ExportService {
 
         const VOICE_CONCURRENCY = 4
         await parallelLimit(voiceMessages, VOICE_CONCURRENCY, async (msg) => {
-          const transcript = await this.transcribeVoice(sessionId, String(msg.localId))
+          const transcript = await this.transcribeVoice(sessionId, String(msg.localId), msg.createTime, msg.senderUsername)
           voiceTranscriptMap.set(msg.localId, transcript)
         })
       }

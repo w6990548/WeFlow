@@ -29,7 +29,22 @@ interface WxidOption {
 }
 
 function SettingsPage() {
-  const { isDbConnected, setDbConnected, setLoading, reset } = useAppStore()
+  const {
+    isDbConnected,
+    setDbConnected,
+    setLoading,
+    reset,
+    updateInfo,
+    setUpdateInfo,
+    isDownloading,
+    setIsDownloading,
+    downloadProgress,
+    setDownloadProgress,
+    showUpdateDialog,
+    setShowUpdateDialog,
+    setUpdateError
+  } = useAppStore()
+
   const resetChatStore = useChatStore((state) => state.reset)
   const { currentTheme, themeMode, setTheme, setThemeMode } = useThemeStore()
   const clearAnalyticsStoreCache = useAnalyticsStore((state) => state.clearCache)
@@ -69,10 +84,7 @@ function SettingsPage() {
   const [isFetchingDbKey, setIsFetchingDbKey] = useState(false)
   const [isFetchingImageKey, setIsFetchingImageKey] = useState(false)
   const [isCheckingUpdate, setIsCheckingUpdate] = useState(false)
-  const [isDownloading, setIsDownloading] = useState(false)
-  const [downloadProgress, setDownloadProgress] = useState(0)
   const [appVersion, setAppVersion] = useState('')
-  const [updateInfo, setUpdateInfo] = useState<{ hasUpdate: boolean; version?: string; releaseNotes?: string } | null>(null)
   const [message, setMessage] = useState<{ text: string; success: boolean } | null>(null)
   const [showDecryptKey, setShowDecryptKey] = useState(false)
   const [dbKeyStatus, setDbKeyStatus] = useState('')
@@ -209,7 +221,7 @@ function SettingsPage() {
 
   // 监听下载进度
   useEffect(() => {
-    const removeListener = window.electronAPI.app.onDownloadProgress?.((progress: number) => {
+    const removeListener = window.electronAPI.app.onDownloadProgress?.((progress: any) => {
       setDownloadProgress(progress)
     })
     return () => removeListener?.()
@@ -229,12 +241,14 @@ function SettingsPage() {
   }, [whisperModelDir])
 
   const handleCheckUpdate = async () => {
+    if (isCheckingUpdate) return
     setIsCheckingUpdate(true)
     setUpdateInfo(null)
     try {
       const result = await window.electronAPI.app.checkForUpdates()
       if (result.hasUpdate) {
         setUpdateInfo(result)
+        setShowUpdateDialog(true)
         showMessage(`发现新版：${result.version}`, true)
       } else {
         showMessage('当前已是最新版', true)
@@ -247,8 +261,10 @@ function SettingsPage() {
   }
 
   const handleUpdateNow = async () => {
+    setShowUpdateDialog(false)
+
     setIsDownloading(true)
-    setDownloadProgress(0)
+    setDownloadProgress({ percent: 0 })
     try {
       showMessage('正在下载更新...', true)
       await window.electronAPI.app.downloadAndInstall()
@@ -257,6 +273,8 @@ function SettingsPage() {
       setIsDownloading(false)
     }
   }
+
+
 
   const showMessage = (text: string, success: boolean) => {
     setMessage({ text, success })
@@ -989,171 +1007,171 @@ function SettingsPage() {
     const exportExcelColumnsLabel = getOptionLabel(exportExcelColumnOptions, exportExcelColumnsValue)
 
     return (
-    <div className="tab-content">
-      <div className="form-group">
-        <label>默认导出格式</label>
-        <span className="form-hint">导出页面默认选中的格式</span>
-        <div className="select-field" ref={exportFormatDropdownRef}>
-          <button
-            type="button"
-            className={`select-trigger ${showExportFormatSelect ? 'open' : ''}`}
-            onClick={() => {
-              setShowExportFormatSelect(!showExportFormatSelect)
-              setShowExportDateRangeSelect(false)
-              setShowExportExcelColumnsSelect(false)
-            }}
-          >
-            <span className="select-value">{exportFormatLabel}</span>
-            <ChevronDown size={16} />
-          </button>
-          {showExportFormatSelect && (
-            <div className="select-dropdown">
-              {exportFormatOptions.map((option) => (
-                <button
-                  key={option.value}
-                  type="button"
-                  className={`select-option ${exportDefaultFormat === option.value ? 'active' : ''}`}
-                  onClick={async () => {
-                    setExportDefaultFormat(option.value)
-                    await configService.setExportDefaultFormat(option.value)
-                    showMessage('已更新导出格式默认值', true)
-                    setShowExportFormatSelect(false)
-                  }}
-                >
-                  <span className="option-label">{option.label}</span>
-                  {option.desc && <span className="option-desc">{option.desc}</span>}
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
-
-      <div className="form-group">
-        <label>默认导出时间范围</label>
-        <span className="form-hint">控制导出页面的默认时间选择</span>
-        <div className="select-field" ref={exportDateRangeDropdownRef}>
-          <button
-            type="button"
-            className={`select-trigger ${showExportDateRangeSelect ? 'open' : ''}`}
-            onClick={() => {
-              setShowExportDateRangeSelect(!showExportDateRangeSelect)
-              setShowExportFormatSelect(false)
-              setShowExportExcelColumnsSelect(false)
-            }}
-          >
-            <span className="select-value">{exportDateRangeLabel}</span>
-            <ChevronDown size={16} />
-          </button>
-          {showExportDateRangeSelect && (
-            <div className="select-dropdown">
-              {exportDateRangeOptions.map((option) => (
-                <button
-                  key={option.value}
-                  type="button"
-                  className={`select-option ${exportDefaultDateRange === option.value ? 'active' : ''}`}
-                  onClick={async () => {
-                    setExportDefaultDateRange(option.value)
-                    await configService.setExportDefaultDateRange(option.value)
-                    showMessage('已更新默认导出时间范围', true)
-                    setShowExportDateRangeSelect(false)
-                  }}
-                >
-                  <span className="option-label">{option.label}</span>
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
-
-      <div className="form-group">
-        <label>默认导出媒体文件</label>
-        <span className="form-hint">控制图片/语音/表情的默认导出开关</span>
-        <div className="log-toggle-line">
-          <span className="log-status">{exportDefaultMedia ? '已开启' : '已关闭'}</span>
-          <label className="switch" htmlFor="export-default-media">
-            <input
-              id="export-default-media"
-              className="switch-input"
-              type="checkbox"
-              checked={exportDefaultMedia}
-              onChange={async (e) => {
-                const enabled = e.target.checked
-                setExportDefaultMedia(enabled)
-                await configService.setExportDefaultMedia(enabled)
-                showMessage(enabled ? '已开启默认媒体导出' : '已关闭默认媒体导出', true)
+      <div className="tab-content">
+        <div className="form-group">
+          <label>默认导出格式</label>
+          <span className="form-hint">导出页面默认选中的格式</span>
+          <div className="select-field" ref={exportFormatDropdownRef}>
+            <button
+              type="button"
+              className={`select-trigger ${showExportFormatSelect ? 'open' : ''}`}
+              onClick={() => {
+                setShowExportFormatSelect(!showExportFormatSelect)
+                setShowExportDateRangeSelect(false)
+                setShowExportExcelColumnsSelect(false)
               }}
-            />
-            <span className="switch-slider" />
-          </label>
+            >
+              <span className="select-value">{exportFormatLabel}</span>
+              <ChevronDown size={16} />
+            </button>
+            {showExportFormatSelect && (
+              <div className="select-dropdown">
+                {exportFormatOptions.map((option) => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    className={`select-option ${exportDefaultFormat === option.value ? 'active' : ''}`}
+                    onClick={async () => {
+                      setExportDefaultFormat(option.value)
+                      await configService.setExportDefaultFormat(option.value)
+                      showMessage('已更新导出格式默认值', true)
+                      setShowExportFormatSelect(false)
+                    }}
+                  >
+                    <span className="option-label">{option.label}</span>
+                    {option.desc && <span className="option-desc">{option.desc}</span>}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
-      </div>
 
-      <div className="form-group">
-        <label>默认语音转文字</label>
-        <span className="form-hint">导出时默认将语音转写为文字</span>
-        <div className="log-toggle-line">
-          <span className="log-status">{exportDefaultVoiceAsText ? '已开启' : '已关闭'}</span>
-          <label className="switch" htmlFor="export-default-voice-as-text">
-            <input
-              id="export-default-voice-as-text"
-              className="switch-input"
-              type="checkbox"
-              checked={exportDefaultVoiceAsText}
-              onChange={async (e) => {
-                const enabled = e.target.checked
-                setExportDefaultVoiceAsText(enabled)
-                await configService.setExportDefaultVoiceAsText(enabled)
-                showMessage(enabled ? '已开启默认语音转文字' : '已关闭默认语音转文字', true)
+        <div className="form-group">
+          <label>默认导出时间范围</label>
+          <span className="form-hint">控制导出页面的默认时间选择</span>
+          <div className="select-field" ref={exportDateRangeDropdownRef}>
+            <button
+              type="button"
+              className={`select-trigger ${showExportDateRangeSelect ? 'open' : ''}`}
+              onClick={() => {
+                setShowExportDateRangeSelect(!showExportDateRangeSelect)
+                setShowExportFormatSelect(false)
+                setShowExportExcelColumnsSelect(false)
               }}
-            />
-            <span className="switch-slider" />
-          </label>
+            >
+              <span className="select-value">{exportDateRangeLabel}</span>
+              <ChevronDown size={16} />
+            </button>
+            {showExportDateRangeSelect && (
+              <div className="select-dropdown">
+                {exportDateRangeOptions.map((option) => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    className={`select-option ${exportDefaultDateRange === option.value ? 'active' : ''}`}
+                    onClick={async () => {
+                      setExportDefaultDateRange(option.value)
+                      await configService.setExportDefaultDateRange(option.value)
+                      showMessage('已更新默认导出时间范围', true)
+                      setShowExportDateRangeSelect(false)
+                    }}
+                  >
+                    <span className="option-label">{option.label}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
-      </div>
 
-      <div className="form-group">
-        <label>Excel 列显示</label>
-        <span className="form-hint">控制 Excel 导出的列字段</span>
-        <div className="select-field" ref={exportExcelColumnsDropdownRef}>
-          <button
-            type="button"
-            className={`select-trigger ${showExportExcelColumnsSelect ? 'open' : ''}`}
-            onClick={() => {
-              setShowExportExcelColumnsSelect(!showExportExcelColumnsSelect)
-              setShowExportFormatSelect(false)
-              setShowExportDateRangeSelect(false)
-            }}
-          >
-            <span className="select-value">{exportExcelColumnsLabel}</span>
-            <ChevronDown size={16} />
-          </button>
-          {showExportExcelColumnsSelect && (
-            <div className="select-dropdown">
-              {exportExcelColumnOptions.map((option) => (
-                <button
-                  key={option.value}
-                  type="button"
-                  className={`select-option ${exportExcelColumnsValue === option.value ? 'active' : ''}`}
-                  onClick={async () => {
-                    const compact = option.value === 'compact'
-                    setExportDefaultExcelCompactColumns(compact)
-                    await configService.setExportDefaultExcelCompactColumns(compact)
-                    showMessage(compact ? '已启用精简列' : '已启用完整列', true)
-                    setShowExportExcelColumnsSelect(false)
-                  }}
-                >
-                  <span className="option-label">{option.label}</span>
-                  {option.desc && <span className="option-desc">{option.desc}</span>}
-                </button>
-              ))}
-            </div>
-          )}
+        <div className="form-group">
+          <label>默认导出媒体文件</label>
+          <span className="form-hint">控制图片/语音/表情的默认导出开关</span>
+          <div className="log-toggle-line">
+            <span className="log-status">{exportDefaultMedia ? '已开启' : '已关闭'}</span>
+            <label className="switch" htmlFor="export-default-media">
+              <input
+                id="export-default-media"
+                className="switch-input"
+                type="checkbox"
+                checked={exportDefaultMedia}
+                onChange={async (e) => {
+                  const enabled = e.target.checked
+                  setExportDefaultMedia(enabled)
+                  await configService.setExportDefaultMedia(enabled)
+                  showMessage(enabled ? '已开启默认媒体导出' : '已关闭默认媒体导出', true)
+                }}
+              />
+              <span className="switch-slider" />
+            </label>
+          </div>
         </div>
-      </div>
 
-    </div>
+        <div className="form-group">
+          <label>默认语音转文字</label>
+          <span className="form-hint">导出时默认将语音转写为文字</span>
+          <div className="log-toggle-line">
+            <span className="log-status">{exportDefaultVoiceAsText ? '已开启' : '已关闭'}</span>
+            <label className="switch" htmlFor="export-default-voice-as-text">
+              <input
+                id="export-default-voice-as-text"
+                className="switch-input"
+                type="checkbox"
+                checked={exportDefaultVoiceAsText}
+                onChange={async (e) => {
+                  const enabled = e.target.checked
+                  setExportDefaultVoiceAsText(enabled)
+                  await configService.setExportDefaultVoiceAsText(enabled)
+                  showMessage(enabled ? '已开启默认语音转文字' : '已关闭默认语音转文字', true)
+                }}
+              />
+              <span className="switch-slider" />
+            </label>
+          </div>
+        </div>
+
+        <div className="form-group">
+          <label>Excel 列显示</label>
+          <span className="form-hint">控制 Excel 导出的列字段</span>
+          <div className="select-field" ref={exportExcelColumnsDropdownRef}>
+            <button
+              type="button"
+              className={`select-trigger ${showExportExcelColumnsSelect ? 'open' : ''}`}
+              onClick={() => {
+                setShowExportExcelColumnsSelect(!showExportExcelColumnsSelect)
+                setShowExportFormatSelect(false)
+                setShowExportDateRangeSelect(false)
+              }}
+            >
+              <span className="select-value">{exportExcelColumnsLabel}</span>
+              <ChevronDown size={16} />
+            </button>
+            {showExportExcelColumnsSelect && (
+              <div className="select-dropdown">
+                {exportExcelColumnOptions.map((option) => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    className={`select-option ${exportExcelColumnsValue === option.value ? 'active' : ''}`}
+                    onClick={async () => {
+                      const compact = option.value === 'compact'
+                      setExportDefaultExcelCompactColumns(compact)
+                      await configService.setExportDefaultExcelCompactColumns(compact)
+                      showMessage(compact ? '已启用精简列' : '已启用完整列', true)
+                      setShowExportExcelColumnsSelect(false)
+                    }}
+                  >
+                    <span className="option-label">{option.label}</span>
+                    {option.desc && <span className="option-desc">{option.desc}</span>}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+
+      </div>
     )
   }
   const renderCacheTab = () => (
@@ -1204,23 +1222,26 @@ function SettingsPage() {
             <>
               <p className="update-hint">新版 v{updateInfo.version} 可用</p>
               {isDownloading ? (
-                <div className="download-progress">
+                <div className="update-progress">
                   <div className="progress-bar">
-                    <div className="progress-fill" style={{ width: `${downloadProgress}%` }} />
+                    <div className="progress-inner" style={{ width: `${(downloadProgress?.percent || 0)}%` }} />
                   </div>
-                  <span>{downloadProgress.toFixed(0)}%</span>
+                  <span>{(downloadProgress?.percent || 0).toFixed(0)}%</span>
                 </div>
               ) : (
-                <button className="btn btn-primary" onClick={handleUpdateNow}>
+                <button className="btn btn-primary" onClick={() => setShowUpdateDialog(true)}>
                   <Download size={16} /> 立即更新
                 </button>
               )}
             </>
           ) : (
-            <button className="btn btn-secondary" onClick={handleCheckUpdate} disabled={isCheckingUpdate}>
-              <RefreshCw size={16} className={isCheckingUpdate ? 'spin' : ''} />
-              {isCheckingUpdate ? '检查中...' : '检查更新'}
-            </button>
+            <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+              <button className="btn btn-secondary" onClick={handleCheckUpdate} disabled={isCheckingUpdate}>
+                <RefreshCw size={16} className={isCheckingUpdate ? 'spin' : ''} />
+                {isCheckingUpdate ? '检查中...' : '检查更新'}
+              </button>
+
+            </div>
           )}
         </div>
       </div>
@@ -1299,6 +1320,7 @@ function SettingsPage() {
         {activeTab === 'cache' && renderCacheTab()}
         {activeTab === 'about' && renderAboutTab()}
       </div>
+
     </div>
   )
 }

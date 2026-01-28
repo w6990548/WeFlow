@@ -29,7 +29,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getVersion: () => ipcRenderer.invoke('app:getVersion'),
     checkForUpdates: () => ipcRenderer.invoke('app:checkForUpdates'),
     downloadAndInstall: () => ipcRenderer.invoke('app:downloadAndInstall'),
-    onDownloadProgress: (callback: (progress: number) => void) => {
+    onDownloadProgress: (callback: (progress: any) => void) => {
       ipcRenderer.on('app:downloadProgress', (_, progress) => callback(progress))
       return () => ipcRenderer.removeAllListeners('app:downloadProgress')
     },
@@ -214,6 +214,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // 朋友圈
   sns: {
     getTimeline: (limit: number, offset: number, usernames?: string[], keyword?: string, startTime?: number, endTime?: number) =>
-      ipcRenderer.invoke('sns:getTimeline', limit, offset, usernames, keyword, startTime, endTime)
+      ipcRenderer.invoke('sns:getTimeline', limit, offset, usernames, keyword, startTime, endTime),
+    debugResource: (url: string) => ipcRenderer.invoke('sns:debugResource', url),
+    proxyImage: (url: string) => ipcRenderer.invoke('sns:proxyImage', url)
   }
 })

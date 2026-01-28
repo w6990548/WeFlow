@@ -246,14 +246,15 @@ export class WcdbCore {
 
       // InitProtection (Added for security)
       try {
-        this.wcdbInitProtection = this.lib.func('bool InitProtection(const char* resourcePath)')
-        const protectionOk = this.wcdbInitProtection(dllDir)
-        if (!protectionOk) {
-          console.error('Core security check failed')
+        this.wcdbInitProtection = this.lib.func('int32 InitProtection(const char* resourcePath)')
+        const protectionCode = this.wcdbInitProtection(dllDir)
+        if (protectionCode !== 0) {
+          console.error('Core security check failed:', protectionCode)
+          lastDllInitError = `初始化失败，错误码: ${protectionCode}`
           return false
         }
       } catch (e) {
-        console.warn('InitProtection symbol not found:', e)
+        console.warn('InitProtection symbol not found or failed:', e)
       }
 
       // 定义类型

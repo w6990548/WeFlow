@@ -1,3 +1,4 @@
+import './preload-env'
 import { app, BrowserWindow, ipcMain, nativeTheme, session } from 'electron'
 import { Worker } from 'worker_threads'
 import { join, dirname } from 'path'
@@ -451,7 +452,7 @@ function registerIpcHandlers() {
 
     // 监听下载进度
     autoUpdater.on('download-progress', (progress) => {
-      win?.webContents.send('app:downloadProgress', progress.percent)
+      win?.webContents.send('app:downloadProgress', progress)
     })
 
     // 下载完成后自动安装
@@ -680,6 +681,14 @@ function registerIpcHandlers() {
 
   ipcMain.handle('sns:getTimeline', async (_, limit: number, offset: number, usernames?: string[], keyword?: string, startTime?: number, endTime?: number) => {
     return snsService.getTimeline(limit, offset, usernames, keyword, startTime, endTime)
+  })
+
+  ipcMain.handle('sns:debugResource', async (_, url: string) => {
+    return snsService.debugResource(url)
+  })
+
+  ipcMain.handle('sns:proxyImage', async (_, url: string) => {
+    return snsService.proxyImage(url)
   })
 
   // 私聊克隆

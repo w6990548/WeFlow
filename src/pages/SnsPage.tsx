@@ -1,8 +1,9 @@
 import { useEffect, useState, useRef, useCallback, useMemo } from 'react'
-import { RefreshCw, Heart, Search, Calendar, User, X, Filter, Play, ImageIcon } from 'lucide-react'
+import { RefreshCw, Heart, Search, Calendar, User, X, Filter, Play, ImageIcon, Zap, Download, ChevronRight } from 'lucide-react'
 import { Avatar } from '../components/Avatar'
 import { ImagePreview } from '../components/ImagePreview'
 import JumpToDateDialog from '../components/JumpToDateDialog'
+import { LivePhotoIcon } from '../components/LivePhotoIcon'
 import './SnsPage.scss'
 
 interface SnsPost {
@@ -13,29 +14,64 @@ interface SnsPost {
     createTime: number
     contentDesc: string
     type?: number
-    media: { url: string; thumb: string }[]
+    media: {
+        url: string
+        thumb: string
+        md5?: string
+        token?: string
+        key?: string
+        encIdx?: string
+        livePhoto?: {
+            url: string
+            thumb: string
+            token?: string
+            key?: string
+            encIdx?: string
+        }
+    }[]
     likes: string[]
     comments: { id: string; nickname: string; content: string; refCommentId: string; refNickname?: string }[]
+    rawXml?: string  // 原始 XML 数据
 }
 
-const MediaItem = ({ url, thumb, onPreview }: { url: string, thumb: string, onPreview: () => void }) => {
+const MediaItem = ({ media, onPreview }: { media: any, onPreview: () => void }) => {
     const [error, setError] = useState(false);
+    const { url, thumb, livePhoto } = media;
+    const isLive = !!livePhoto;
+    const targetUrl = thumb || url;
+
+    const handleDownload = (e: React.MouseEvent) => {
+        e.stopPropagation();
+
+        let downloadUrl = url;
+        let downloadKey = media.key || '';
+
+        if (isLive && media.livePhoto) {
+            downloadUrl = media.livePhoto.url;
+            downloadKey = media.livePhoto.key || '';
+        }
+
+        // TODO: 调用后端下载服务
+        // window.electronAPI.sns.download(downloadUrl, downloadKey);
+    };
 
     return (
-        <div className={`media-item ${error ? 'error' : ''}`}>
-            {!error ? (
-                <img
-                    src={thumb || url}
-                    alt=""
-                    loading="lazy"
-                    onClick={onPreview}
-                    onError={() => setError(true)}
-                />
-            ) : (
-                <div className="media-error-placeholder" onClick={onPreview}>
-                    <ImageIcon size={24} style={{ opacity: 0.3 }} />
+        <div className={`media-item ${error ? 'error' : ''}`} onClick={onPreview}>
+            <img
+                src={targetUrl}
+                alt=""
+                referrerPolicy="no-referrer"
+                loading="lazy"
+                onError={() => setError(true)}
+            />
+            {isLive && (
+                <div className="live-badge">
+                    <LivePhotoIcon size={16} className="live-icon" />
                 </div>
             )}
+            <button className="download-btn-overlay" onClick={handleDownload} title="下载原图">
+                <Download size={14} />
+            </button>
         </div>
     );
 };
@@ -65,6 +101,7 @@ export default function SnsPage() {
     const [showJumpDialog, setShowJumpDialog] = useState(false)
     const [jumpTargetDate, setJumpTargetDate] = useState<Date | undefined>(undefined)
     const [previewImage, setPreviewImage] = useState<string | null>(null)
+    const [debugPost, setDebugPost] = useState<SnsPost | null>(null)
 
     const postsContainerRef = useRef<HTMLDivElement>(null)
 
@@ -264,7 +301,7 @@ export default function SnsPage() {
             setHasNewer(false)
             setSelectedUsernames([])
             setSearchKeyword('')
-            setJumpTargetDate(null)
+            setJumpTargetDate(undefined)
             loadContacts()
             loadPosts({ reset: true })
         }
@@ -347,16 +384,157 @@ export default function SnsPage() {
     return (
         <div className="sns-page">
             <div className="sns-container">
-                {/* 侧边栏：过滤与搜索 */}
+                <main className="sns-main">
+                    <div className="sns-header">
+                        <div className="header-left">
+                            <h2>社交动态</h2>
+                        </div>
+                        <div className="header-right">
+                            <button
+                                className={`icon-btn sidebar-trigger ${isSidebarOpen ? 'active' : ''}`}
+                                onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+                                title={isSidebarOpen ? "收起筛选" : "打开筛选"}
+                            >
+                                <Filter size={18} />
+                            </button>
+                            <button
+                                onClick={() => {
+                                    if (jumpTargetDate) setJumpTargetDate(undefined);
+                                    loadPosts({ reset: true });
+                                }}
+                                disabled={loading || loadingNewer}
+                                className="icon-btn refresh-btn"
+                                title="刷新"
+                            >
+                                <RefreshCw size={18} className={(loading || loadingNewer) ? 'spinning' : ''} />
+                            </button>
+                        </div>
+                    </div>
+
+                    <div className="sns-content-wrapper">
+                        <div className="sns-content custom-scrollbar" onScroll={handleScroll} onWheel={handleWheel} ref={postsContainerRef}>
+                            <div className="posts-list">
+                                {loadingNewer && (
+                                    <div className="status-indicator loading-newer">
+                                        <RefreshCw size={16} className="spinning" />
+                                        <span>正在检查更新的动态...</span>
+                                    </div>
+                                )}
+                                {!loadingNewer && hasNewer && (
+                                    <div className="status-indicator newer-hint" onClick={() => loadPosts({ direction: 'newer' })}>
+                                        查看更新的动态
+                                    </div>
+                                )}
+                                {posts.map((post, index) => {
+                                    return (
+                                        <div key={post.id} className="sns-post-row">
+                                            <div className="sns-post-wrapper">
+                                                <div className="sns-post">
+                                                    <div className="post-header">
+                                                        <Avatar
+                                                            src={post.avatarUrl}
+                                                            name={post.nickname}
+                                                            size={44}
+                                                            shape="rounded"
+                                                        />
+                                                        <div className="post-info">
+                                                            <div className="nickname">{post.nickname}</div>
+                                                            <div className="time">{formatTime(post.createTime)}</div>
+                                                        </div>
+                                                        <button
+                                                            className="debug-btn"
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                setDebugPost(post);
+                                                            }}
+                                                            title="查看原始数据"
+                                                        >
+                                                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                                                <polyline points="16 18 22 12 16 6"></polyline>
+                                                                <polyline points="8 6 2 12 8 18"></polyline>
+                                                            </svg>
+                                                        </button>
+                                                    </div>
+
+                                                    <div className="post-body">
+                                                        {post.contentDesc && <div className="post-text">{post.contentDesc}</div>}
+
+                                                        {post.type === 15 ? (
+                                                            <div className="post-video-placeholder">
+                                                                <Play size={20} />
+                                                                <span>视频动态</span>
+                                                            </div>
+                                                        ) : post.media.length > 0 && (
+                                                            <div className={`post-media-grid media-count-${Math.min(post.media.length, 9)}`}>
+                                                                {post.media.map((m, idx) => (
+                                                                    <MediaItem key={idx} media={m} onPreview={() => setPreviewImage(m.url)} />
+                                                                ))}
+                                                            </div>
+                                                        )}
+                                                    </div>
+
+                                                    {(post.likes.length > 0 || post.comments.length > 0) && (
+                                                        <div className="post-footer">
+                                                            {post.likes.length > 0 && (
+                                                                <div className="likes-section">
+                                                                    <Heart size={14} className="icon" />
+                                                                    <span className="likes-list">
+                                                                        {post.likes.join('、')}
+                                                                    </span>
+                                                                </div>
+                                                            )}
+
+                                                            {post.comments.length > 0 && (
+                                                                <div className="comments-section">
+                                                                    {post.comments.map((c, idx) => (
+                                                                        <div key={idx} className="comment-item">
+                                                                            <span className="comment-user">{c.nickname}</span>
+                                                                            {c.refNickname && (
+                                                                                <>
+                                                                                    <span className="reply-text">回复</span>
+                                                                                    <span className="comment-user">{c.refNickname}</span>
+                                                                                </>
+                                                                            )}
+                                                                            <span className="comment-separator">: </span>
+                                                                            <span className="comment-content">{c.content}</span>
+                                                                        </div>
+                                                                    ))}
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )
+                                })}
+                            </div>
+
+                            {loading && <div className="status-indicator loading-more">
+                                <RefreshCw size={16} className="spinning" />
+                                <span>正在加载更多...</span>
+                            </div>}
+                            {!hasMore && posts.length > 0 && <div className="status-indicator no-more">已经到底啦</div>}
+                            {!loading && posts.length === 0 && (
+                                <div className="no-results">
+                                    <div className="no-results-icon"><Search size={48} /></div>
+                                    <p>未找到相关动态</p>
+                                    {(selectedUsernames.length > 0 || searchKeyword) && (
+                                        <button onClick={clearFilters} className="reset-inline">
+                                            重置搜索条件
+                                        </button>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </main>
+
+                {/* 侧边栏：过滤与搜索 (moved to right) */}
                 <aside className={`sns-sidebar ${isSidebarOpen ? 'open' : 'closed'}`}>
                     <div className="sidebar-header">
-                        <div className="title-wrapper">
-                            <Filter size={18} className="title-icon" />
-                            <h3>筛选条件</h3>
-                        </div>
-                        <button className="toggle-btn" onClick={() => setIsSidebarOpen(false)}>
-                            <X size={18} />
-                        </button>
+                        <h3>筛选条件</h3>
+
                     </div>
 
                     <div className="filter-content custom-scrollbar">
@@ -460,136 +638,6 @@ export default function SnsPage() {
                         </button>
                     </div>
                 </aside>
-
-                <main className="sns-main">
-                    <div className="sns-header">
-                        <div className="header-left">
-                            {!isSidebarOpen && (
-                                <button className="icon-btn sidebar-trigger" onClick={() => setIsSidebarOpen(true)}>
-                                    <Filter size={20} />
-                                </button>
-                            )}
-                            <h2>社交动态</h2>
-                        </div>
-                        <div className="header-right">
-                            <button
-                                onClick={() => {
-                                    if (jumpTargetDate) setJumpTargetDate(undefined);
-                                    loadPosts({ reset: true });
-                                }}
-                                disabled={loading || loadingNewer}
-                                className="icon-btn refresh-btn"
-                            >
-                                <RefreshCw size={18} className={(loading || loadingNewer) ? 'spinning' : ''} />
-                            </button>
-                        </div>
-                    </div>
-
-                    <div className="sns-content-wrapper">
-                        <div className="sns-content custom-scrollbar" onScroll={handleScroll} onWheel={handleWheel} ref={postsContainerRef}>
-                            <div className="posts-list">
-                                {loadingNewer && (
-                                    <div className="status-indicator loading-newer">
-                                        <RefreshCw size={16} className="spinning" />
-                                        <span>正在检查更新的动态...</span>
-                                    </div>
-                                )}
-                                {!loadingNewer && hasNewer && (
-                                    <div className="status-indicator newer-hint" onClick={() => loadPosts({ direction: 'newer' })}>
-                                        查看更新的动态
-                                    </div>
-                                )}
-                                {posts.map((post, index) => {
-                                    return (
-                                        <div key={post.id} className="sns-post-row">
-                                            <div className="sns-post-wrapper">
-                                                <div className="sns-post">
-                                                    <div className="post-header">
-                                                        <Avatar
-                                                            src={post.avatarUrl}
-                                                            name={post.nickname}
-                                                            size={44}
-                                                            shape="rounded"
-                                                        />
-                                                        <div className="post-info">
-                                                            <div className="nickname">{post.nickname}</div>
-                                                            <div className="time">{formatTime(post.createTime)}</div>
-                                                        </div>
-                                                    </div>
-
-                                                    <div className="post-body">
-                                                        {post.contentDesc && <div className="post-text">{post.contentDesc}</div>}
-
-                                                        {post.type === 15 ? (
-                                                            <div className="post-video-placeholder">
-                                                                <Play size={20} />
-                                                                <span>视频动态</span>
-                                                            </div>
-                                                        ) : post.media.length > 0 && (
-                                                            <div className={`post-media-grid media-count-${Math.min(post.media.length, 9)}`}>
-                                                                {post.media.map((m, idx) => (
-                                                                    <MediaItem key={idx} url={m.url} thumb={m.thumb} onPreview={() => setPreviewImage(m.url)} />
-                                                                ))}
-                                                            </div>
-                                                        )}
-                                                    </div>
-
-                                                    {(post.likes.length > 0 || post.comments.length > 0) && (
-                                                        <div className="post-footer">
-                                                            {post.likes.length > 0 && (
-                                                                <div className="likes-section">
-                                                                    <Heart size={14} className="icon" />
-                                                                    <span className="likes-list">
-                                                                        {post.likes.join('、')}
-                                                                    </span>
-                                                                </div>
-                                                            )}
-
-                                                            {post.comments.length > 0 && (
-                                                                <div className="comments-section">
-                                                                    {post.comments.map((c, idx) => (
-                                                                        <div key={idx} className="comment-item">
-                                                                            <span className="comment-user">{c.nickname}</span>
-                                                                            {c.refNickname && (
-                                                                                <>
-                                                                                    <span className="reply-text">回复</span>
-                                                                                    <span className="comment-user">{c.refNickname}</span>
-                                                                                </>
-                                                                            )}
-                                                                            <span className="comment-separator">: </span>
-                                                                            <span className="comment-content">{c.content}</span>
-                                                                        </div>
-                                                                    ))}
-                                                                </div>
-                                                            )}
-                                                        </div>
-                                                    )}
-                                                </div>
-                                            </div>
-                                        </div>
-                                    )
-                                })}
-                            </div>
-
-                            {loading && <div className="status-indicator loading-more">
-                                <RefreshCw size={16} className="spinning" />
-                                <span>正在加载更多...</span>
-                            </div>}
-                            {!hasMore && posts.length > 0 && <div className="status-indicator no-more">已经到底啦</div>}
-                            {!loading && posts.length === 0 && (
-                                <div className="no-results">
-                                    <div className="no-results-icon"><Search size={48} /></div>
-                                    <p>未找到相关动态</p>
-                                    {(selectedUsernames.length > 0 || searchKeyword) && (
-                                        <button onClick={clearFilters} className="reset-inline">
-                                            重置搜索条件
-                                        </button>
-                                    )}
-                                </div>
-                            )}
-                        </div>
-                    </div>
-                </main>
             </div>
             {previewImage && (
                 <ImagePreview src={previewImage} onClose={() => setPreviewImage(null)} />
@@ -605,6 +653,154 @@ export default function SnsPage() {
                 }}
                 currentDate={jumpTargetDate || new Date()}
             />
+
+            {/* Debug Info Dialog */}
+            {debugPost && (
+                <div className="modal-overlay" onClick={() => setDebugPost(null)}>
+                    <div className="debug-dialog" onClick={(e) => e.stopPropagation()}>
+                        <div className="debug-dialog-header">
+                            <h3>原始数据 - {debugPost.nickname}</h3>
+                            <button className="close-btn" onClick={() => setDebugPost(null)}>
+                                <X size={20} />
+                            </button>
+                        </div>
+                        <div className="debug-dialog-body">
+
+                            <div className="debug-section">
+                                <h4>ℹ 基本信息</h4>
+                                <div className="debug-item">
+                                    <span className="debug-key">ID:</span>
+                                    <span className="debug-value">{debugPost.id}</span>
+                                </div>
+                                <div className="debug-item">
+                                    <span className="debug-key">用户名:</span>
+                                    <span className="debug-value">{debugPost.username}</span>
+                                </div>
+                                <div className="debug-item">
+                                    <span className="debug-key">昵称:</span>
+                                    <span className="debug-value">{debugPost.nickname}</span>
+                                </div>
+                                <div className="debug-item">
+                                    <span className="debug-key">时间:</span>
+                                    <span className="debug-value">{new Date(debugPost.createTime * 1000).toLocaleString()}</span>
+                                </div>
+                                <div className="debug-item">
+                                    <span className="debug-key">类型:</span>
+                                    <span className="debug-value">{debugPost.type}</span>
+                                </div>
+                            </div>
+
+                            <div className="debug-section">
+                                <h4> 媒体信息 ({debugPost.media.length} 项)</h4>
+                                {debugPost.media.map((media, idx) => (
+                                    <div key={idx} className="media-debug-item">
+                                        <div className="media-debug-header">媒体 {idx + 1}</div>
+                                        <div className="debug-item">
+                                            <span className="debug-key">URL:</span>
+                                            <span className="debug-value">{media.url}</span>
+                                        </div>
+                                        <div className="debug-item">
+                                            <span className="debug-key">缩略图:</span>
+                                            <span className="debug-value">{media.thumb}</span>
+                                        </div>
+                                        {media.md5 && (
+                                            <div className="debug-item">
+                                                <span className="debug-key">MD5:</span>
+                                                <span className="debug-value">{media.md5}</span>
+                                            </div>
+                                        )}
+                                        {media.token && (
+                                            <div className="debug-item">
+                                                <span className="debug-key">Token:</span>
+                                                <span className="debug-value">{media.token}</span>
+                                            </div>
+                                        )}
+                                        {media.key && (
+                                            <div className="debug-item">
+                                                <span className="debug-key">Key (解密密钥):</span>
+                                                <span className="debug-value">{media.key}</span>
+                                            </div>
+                                        )}
+                                        {media.encIdx && (
+                                            <div className="debug-item">
+                                                <span className="debug-key">Enc Index:</span>
+                                                <span className="debug-value">{media.encIdx}</span>
+                                            </div>
+                                        )}
+                                        {media.livePhoto && (
+                                            <div className="live-photo-debug">
+                                                <div className="live-photo-label"> Live Photo 视频部分:</div>
+                                                <div className="debug-item">
+                                                    <span className="debug-key">视频 URL:</span>
+                                                    <span className="debug-value">{media.livePhoto.url}</span>
+                                                </div>
+                                                <div className="debug-item">
+                                                    <span className="debug-key">视频缩略图:</span>
+                                                    <span className="debug-value">{media.livePhoto.thumb}</span>
+                                                </div>
+                                                {media.livePhoto.token && (
+                                                    <div className="debug-item">
+                                                        <span className="debug-key">视频 Token:</span>
+                                                        <span className="debug-value">{media.livePhoto.token}</span>
+                                                    </div>
+                                                )}
+                                                {media.livePhoto.key && (
+                                                    <div className="debug-item">
+                                                        <span className="debug-key">视频 Key:</span>
+                                                        <span className="debug-value">{media.livePhoto.key}</span>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )}
+                                    </div>
+                                ))}
+                            </div>
+
+                            {/* 原始 XML */}
+                            {debugPost.rawXml && (
+                                <div className="debug-section">
+                                    <h4> 原始 XML 数据</h4>
+                                    <pre className="json-code">{(() => {
+                                        // XML 缩进格式化
+                                        let formatted = '';
+                                        let indent = 0;
+                                        const tab = '  ';
+                                        const parts = debugPost.rawXml.split(/(<[^>]+>)/g).filter(p => p.trim());
+
+                                        for (const part of parts) {
+                                            if (!part.startsWith('<')) {
+                                                if (part.trim()) formatted += part;
+                                                continue;
+                                            }
+
+                                            if (part.startsWith('</')) {
+                                                indent = Math.max(0, indent - 1);
+                                                formatted += '\n' + tab.repeat(indent) + part;
+                                            } else if (part.endsWith('/>')) {
+                                                formatted += '\n' + tab.repeat(indent) + part;
+                                            } else {
+                                                formatted += '\n' + tab.repeat(indent) + part;
+                                                indent++;
+                                            }
+                                        }
+
+                                        return formatted.trim();
+                                    })()}</pre>
+                                    <button
+                                        className="copy-json-btn"
+                                        onClick={() => {
+                                            navigator.clipboard.writeText(debugPost.rawXml || '');
+                                            alert('已复制 XML 到剪贴板');
+                                        }}
+                                    >
+                                        复制 XML
+                                    </button>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     )
 }

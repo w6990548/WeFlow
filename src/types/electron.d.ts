@@ -333,12 +333,30 @@ export interface ElectronAPI {
         createTime: number
         contentDesc: string
         type?: number
-        media: Array<{ url: string; thumb: string }>
+        media: Array<{
+          url: string
+          thumb: string
+          md5?: string
+          token?: string
+          key?: string
+          encIdx?: string
+          livePhoto?: {
+            url: string
+            thumb: string
+            md5?: string
+            token?: string
+            key?: string
+            encIdx?: string
+          }
+        }>
         likes: Array<string>
         comments: Array<{ id: string; nickname: string; content: string; refCommentId: string; refNickname?: string }>
+        rawXml?: string
       }>
       error?: string
     }>
+    debugResource: (url: string) => Promise<{ success: boolean; status?: number; headers?: any; error?: string }>
+    proxyImage: (url: string) => Promise<{ success: boolean; dataUrl?: string; error?: string }>
   }
 }
 

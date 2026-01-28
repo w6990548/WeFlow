@@ -328,7 +328,7 @@ class ChatService {
         const cached = this.avatarCache.get(username)
         // 如果缓存有效且有头像，直接使用；如果没有头像，也需要重新尝试获取
         // 额外检查：如果头像是无效的 hex 格式（以 ffd8 开头），也需要重新获取
-        const isValidAvatar = cached?.avatarUrl && 
+        const isValidAvatar = cached?.avatarUrl &&
           !cached.avatarUrl.includes('base64,ffd8') // 检测错误的 hex 格式
         if (cached && now - cached.updatedAt < this.avatarCacheTtlMs && isValidAvatar) {
           result[username] = {
@@ -970,7 +970,7 @@ class ChatService {
         const title = this.extractXmlValue(content, 'title')
         return title || '[引用消息]'
       case 266287972401:
-        return '[拍一拍]'
+        return this.cleanPatMessage(content)
       case 81604378673:
         return '[聊天记录]'
       case 8594229559345:
@@ -1660,6 +1660,37 @@ class ChatService {
   }
 
   /**
+   * 清理拍一拍消息
+   * 格式示例: 我拍了拍 "梨绒" ງ໐໐໓ ຖiງht620000wxid_...
+   */
+  private cleanPatMessage(content: string): string {
+    if (!content) return '[拍一拍]'
+
+    // 1. 尝试匹配标准的 "A拍了拍B" 格式
+    // 这里的正则比较宽泛，为了兼容不同的语言环境
+    const match = /^(.+?拍了拍.+?)(?:[\r\n]|$|ງ|wxid_)/.exec(content)
+    if (match) {
+      return `[拍一拍] ${match[1].trim()}`
+    }
+
+    // 2. 如果匹配失败，尝试清理掉疑似的 garbage (wxid, 乱码)
+    let cleaned = content.replace(/wxid_[a-zA-Z0-9_-]+/g, '') // 移除 wxid
+    cleaned = cleaned.replace(/[ງ໐໓ຖiht]+/g, ' ') // 移除已知的乱码字符
+    cleaned = cleaned.replace(/\d{6,}/g, '') // 移除长数字
+    cleaned = cleaned.replace(/\s+/g, ' ').trim() // 清理空格
+
+    // 移除不可见字符
+    cleaned = this.cleanUtf16(cleaned)
+
+    // 如果清理后还有内容，返回
+    if (cleaned && cleaned.length > 1 && !cleaned.includes('xml')) {
+      return `[拍一拍] ${cleaned}`
+    }
+
+    return '[拍一拍]'
+  }
+
+  /**
    * 解码消息内容（处理 BLOB 和压缩数据）
    */
   private decodeMessageContent(messageContent: any, compressContent: any): string {
@@ -2323,7 +2354,7 @@ class ChatService {
   /**
    * getVoiceData (绕过WCDB的buggy getVoiceData，直接用execQuery读取)
    */
-  async getVoiceData(sessionId: string, msgId: string, createTime?: number, serverId?: string | number): Promise<{ success: boolean; data?: string; error?: string }> {
+  async getVoiceData(sessionId: string, msgId: string, createTime?: number, serverId?: string | number, senderWxidOpt?: string): Promise<{ success: boolean; data?: string; error?: string }> {
     const startTime = Date.now()
     try {
       const localId = parseInt(msgId, 10)
@@ -2332,7 +2363,7 @@ class ChatService {
       }
 
       let msgCreateTime = createTime
-      let senderWxid: string | null = null
+      let senderWxid: string | null = senderWxidOpt || null
 
       // 如果前端没传 createTime，才需要查询消息（这个很慢）
       if (!msgCreateTime) {
@@ -2403,7 +2434,7 @@ class ChatService {
       console.log(`[Voice] getVoiceDataFromMediaDb: ${t4 - t3}ms`)
 
       if (!silkData) {
-        return { success: false, error: '未找到语音数据' }
+        return { success: false, error: '未找到语音数据 (请确保已在微信中播放过该语音)' }
       }
 
       const t5 = Date.now()
@@ -2471,11 +2502,20 @@ class ChatService {
         const t2 = Date.now()
         console.log(`[Voice] listMediaDbs: ${t2 - t1}ms`)
 
-        if (!mediaDbsResult.success || !mediaDbsResult.data || mediaDbsResult.data.length === 0) {
+        let files = mediaDbsResult.success && mediaDbsResult.data ? (mediaDbsResult.data as string[]) : []
+
+        // Fallback: 如果 WCDB DLL 没找到，手动查找
+        if (files.length === 0) {
+          console.warn('[Voice] listMediaDbs returned empty, trying manual search')
+          files = await this.findMediaDbsManually()
+        }
+
+        if (files.length === 0) {
+          console.error('[Voice] No media DBs found')
           return null
         }
 
-        mediaDbFiles = mediaDbsResult.data as string[]
+        mediaDbFiles = files
         this.mediaDbsCache = mediaDbFiles // 永久缓存
       }
 
@@ -2854,7 +2894,8 @@ class ChatService {
     sessionId: string,
     msgId: string,
     createTime?: number,
-    onPartial?: (text: string) => void
+    onPartial?: (text: string) => void,
+    senderWxid?: string
   ): Promise<{ success: boolean; transcript?: string; error?: string }> {
     const startTime = Date.now()
     console.log(`[Transcribe] 开始转写: sessionId=${sessionId}, msgId=${msgId}, createTime=${createTime}`)
@@ -2926,7 +2967,7 @@ class ChatService {
             console.log(`[Transcribe] WAV缓存未命中，调用 getVoiceData`)
             const t3 = Date.now()
             // 调用 getVoiceData 获取并解码
-            const voiceResult = await this.getVoiceData(sessionId, msgId, msgCreateTime, serverId)
+            const voiceResult = await this.getVoiceData(sessionId, msgId, msgCreateTime, serverId, senderWxid)
             const t4 = Date.now()
             console.log(`[Transcribe] getVoiceData: ${t4 - t3}ms, success=${voiceResult.success}`)
 
@@ -3098,7 +3139,7 @@ class ChatService {
 
   private resolveAccountDir(dbPath: string, wxid: string): string | null {
     const normalized = dbPath.replace(/[\\\\/]+$/, '')
-    
+
     // 如果 dbPath 本身指向 db_storage 目录下的文件（如某个 .db 文件）
     // 则向上回溯到账号目录
     if (basename(normalized).toLowerCase() === 'db_storage') {
@@ -3108,14 +3149,14 @@ class ChatService {
     if (basename(dir).toLowerCase() === 'db_storage') {
       return dirname(dir)
     }
-    
+
     // 否则，dbPath 应该是数据库根目录（如 xwechat_files）
     // 账号目录应该是 {dbPath}/{wxid}
     const accountDirWithWxid = join(normalized, wxid)
     if (existsSync(accountDirWithWxid)) {
       return accountDirWithWxid
     }
-    
+
     // 兜底：返回 dbPath 本身（可能 dbPath 已经是账号目录）
     return normalized
   }

@@ -24,10 +24,25 @@ import * as configService from './services/config'
 import { Download, X, Shield } from 'lucide-react'
 import './App.scss'
 
+import UpdateDialog from './components/UpdateDialog'
+import UpdateProgressCapsule from './components/UpdateProgressCapsule'
+
 function App() {
   const navigate = useNavigate()
   const location = useLocation()
-  const { setDbConnected } = useAppStore()
+  const {
+    setDbConnected,
+    updateInfo,
+    setUpdateInfo,
+    isDownloading,
+    setIsDownloading,
+    downloadProgress,
+    setDownloadProgress,
+    showUpdateDialog,
+    setShowUpdateDialog,
+    setUpdateError
+  } = useAppStore()
+
   const { currentTheme, themeMode, setTheme, setThemeMode } = useThemeStore()
   const isAgreementWindow = location.pathname === '/agreement-window'
   const isOnboardingWindow = location.pathname === '/onboarding-window'
@@ -38,11 +53,6 @@ function App() {
   const [showAgreement, setShowAgreement] = useState(false)
   const [agreementChecked, setAgreementChecked] = useState(false)
   const [agreementLoading, setAgreementLoading] = useState(true)
-
-  // 更新提示状态
-  const [updateInfo, setUpdateInfo] = useState<{ version: string; releaseNotes: string } | null>(null)
-  const [isDownloading, setIsDownloading] = useState(false)
-  const [downloadProgress, setDownloadProgress] = useState(0)
 
   useEffect(() => {
     const root = document.documentElement
@@ -148,8 +158,12 @@ function App() {
 
   // 监听启动时的更新通知
   useEffect(() => {
-    const removeUpdateListener = window.electronAPI.app.onUpdateAvailable?.((info) => {
-      setUpdateInfo(info)
+    const removeUpdateListener = window.electronAPI.app.onUpdateAvailable?.((info: any) => {
+      // 发现新版本时自动打开更新弹窗
+      if (info) {
+        setUpdateInfo({ ...info, hasUpdate: true })
+        setShowUpdateDialog(true)
+      }
     })
     const removeProgressListener = window.electronAPI.app.onDownloadProgress?.((progress) => {
       setDownloadProgress(progress)
@@ -158,16 +172,20 @@ function App() {
       removeUpdateListener?.()
       removeProgressListener?.()
     }
-  }, [])
+  }, [setUpdateInfo, setDownloadProgress, setShowUpdateDialog])
 
   const handleUpdateNow = async () => {
+    setShowUpdateDialog(false)
     setIsDownloading(true)
-    setDownloadProgress(0)
+    setDownloadProgress({ percent: 0 })
     try {
       await window.electronAPI.app.downloadAndInstall()
-    } catch (e) {
+    } catch (e: any) {
       console.error('更新失败:', e)
       setIsDownloading(false)
+      // Extract clean error message if possible
+      const errorMsg = e.message || String(e)
+      setUpdateError(errorMsg.includes('暂时禁用') ? '自动更新已暂时禁用' : errorMsg)
     }
   }
 
@@ -250,6 +268,9 @@ function App() {
     <div className="app-container">
       <TitleBar />
 
+      {/* 全局悬浮进度胶囊 (处理：新版本提示、下载进度、错误提示) */}
+      <UpdateProgressCapsule />
+
       {/* 用户协议弹窗 */}
       {showAgreement && !agreementLoading && (
         <div className="agreement-overlay">
@@ -301,31 +322,15 @@ function App() {
         </div>
       )}
 
-      {/* 更新提示条 */}
-      {updateInfo && (
-        <div className="update-banner">
-          <span className="update-text">
-            发现新版本 <strong>v{updateInfo.version}</strong>
-          </span>
-          {isDownloading ? (
-            <div className="update-progress">
-              <div className="progress-bar">
-                <div className="progress-fill" style={{ width: `${downloadProgress}%` }} />
-              </div>
-              <span>{downloadProgress.toFixed(0)}%</span>
-            </div>
-          ) : (
-            <>
-              <button className="update-btn" onClick={handleUpdateNow}>
-                <Download size={14} /> 立即更新
-              </button>
-              <button className="dismiss-btn" onClick={dismissUpdate}>
-                <X size={14} />
-              </button>
-            </>
-          )}
-        </div>
-      )}
+      {/* 更新提示对话框 */}
+      <UpdateDialog
+        open={showUpdateDialog}
+        updateInfo={updateInfo}
+        onClose={() => setShowUpdateDialog(false)}
+        onUpdate={handleUpdateNow}
+        isDownloading={isDownloading}
+        progress={downloadProgress}
+      />
 
       <div className="main-layout">
         <Sidebar />
