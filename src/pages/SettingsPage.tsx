@@ -444,7 +444,9 @@ function SettingsPage() {
     try {
       const result = await dialog.openFile({ title: '选择微信数据库根目录', properties: ['openDirectory'] })
       if (!result.canceled && result.filePaths.length > 0) {
-        setDbPath(result.filePaths[0])
+        const path = result.filePaths[0]
+        setDbPath(path)
+        await configService.setDbPath(path)
         showMessage('已选择数据库目录', true)
       }
     } catch (e: any) {
@@ -488,7 +490,9 @@ function SettingsPage() {
     try {
       const result = await dialog.openFile({ title: '选择缓存目录', properties: ['openDirectory'] })
       if (!result.canceled && result.filePaths.length > 0) {
-        setCachePath(result.filePaths[0])
+        const path = result.filePaths[0]
+        setCachePath(path)
+        await configService.setCachePath(path)
         showMessage('已选择缓存目录', true)
       }
     } catch (e: any) {
