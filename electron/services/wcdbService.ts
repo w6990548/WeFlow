@@ -434,8 +434,8 @@ export class WcdbService {
   /**
    * 修改消息内容
    */
-  async updateMessage(sessionId: string, localId: number, newContent: string): Promise<{ success: boolean; error?: string }> {
-    return this.callWorker('updateMessage', { sessionId, localId, newContent })
+  async updateMessage(sessionId: string, localId: number, createTime: number, newContent: string): Promise<{ success: boolean; error?: string }> {
+    return this.callWorker('updateMessage', { sessionId, localId, createTime, newContent })
   }
 
   /**

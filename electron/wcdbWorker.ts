@@ -151,7 +151,7 @@ if (parentPort) {
                     result = await core.verifyUser(payload.message, payload.hwnd)
                     break
                 case 'updateMessage':
-                    result = await core.updateMessage(payload.sessionId, payload.localId, payload.newContent)
+                    result = await core.updateMessage(payload.sessionId, payload.localId, payload.createTime, payload.newContent)
                     break
                 case 'deleteMessage':
                     result = await core.deleteMessage(payload.sessionId, payload.localId, payload.createTime, payload.dbPathHint)

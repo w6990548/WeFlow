@@ -273,11 +273,11 @@ class ChatService {
   /**
    * 修改消息内容
    */
-  async updateMessage(sessionId: string, localId: number, newContent: string): Promise<{ success: boolean; error?: string }> {
+  async updateMessage(sessionId: string, localId: number, createTime: number, newContent: string): Promise<{ success: boolean; error?: string }> {
     try {
       const connectResult = await this.ensureConnected()
       if (!connectResult.success) return { success: false, error: connectResult.error }
-      return await wcdbService.updateMessage(sessionId, localId, newContent)
+      return await wcdbService.updateMessage(sessionId, localId, createTime, newContent)
     } catch (e) {
       return { success: false, error: String(e) }
     }

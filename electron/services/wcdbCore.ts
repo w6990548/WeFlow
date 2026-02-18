@@ -387,9 +387,9 @@ export class WcdbCore {
         this.wcdbSetMyWxid = null
       }
 
-      // wcdb_status wcdb_update_message(wcdb_handle handle, const char* session_id, int64_t local_id, const char* new_content, char** out_error)
+      // wcdb_status wcdb_update_message(wcdb_handle handle, const char* session_id, int64_t local_id, int32_t create_time, const char* new_content, char** out_error)
       try {
-        this.wcdbUpdateMessage = this.lib.func('int32 wcdb_update_message(int64 handle, const char* sessionId, int64 localId, const char* newContent, _Out_ void** outError)')
+        this.wcdbUpdateMessage = this.lib.func('int32 wcdb_update_message(int64 handle, const char* sessionId, int64 localId, int32 createTime, const char* newContent, _Out_ void** outError)')
       } catch {
         this.wcdbUpdateMessage = null
       }
@@ -1793,14 +1793,14 @@ export class WcdbCore {
   /**
    * 修改消息内容
    */
-  async updateMessage(sessionId: string, localId: number, newContent: string): Promise<{ success: boolean; error?: string }> {
+  async updateMessage(sessionId: string, localId: number, createTime: number, newContent: string): Promise<{ success: boolean; error?: string }> {
     if (!this.initialized || !this.wcdbUpdateMessage) return { success: false, error: 'WCDB Not Initialized or Method Missing' }
     if (!this.handle) return { success: false, error: 'Not Connected' }
 
     return new Promise((resolve) => {
       try {
         const outError = [null as any]
-        const result = this.wcdbUpdateMessage(this.handle, sessionId, localId, newContent, outError)
+        const result = this.wcdbUpdateMessage(this.handle, sessionId, localId, createTime, newContent, outError)
 
         if (result !== 0) {
           let errorMsg = 'Unknown Error'

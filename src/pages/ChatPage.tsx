@@ -1658,7 +1658,7 @@ function ChatPage(_props: ChatPageProps) {
       }
 
       try {
-        const result = await (window as any).electronAPI.chat.updateMessage(currentSessionId, editingMessage.message.localId, finalContent)
+        const result = await (window as any).electronAPI.chat.updateMessage(currentSessionId, editingMessage.message.localId, editingMessage.message.createTime, finalContent)
         if (result.success) {
           const currentMessages = useChatStore.getState().messages
           const newMessages = currentMessages.map(m => {
