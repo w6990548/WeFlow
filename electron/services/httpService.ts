@@ -1,6 +1,6 @@
 ﻿/**
- * HTTP API 鏈嶅姟
- * 鎻愪緵 ChatLab 鏍囧噯鍖栨牸寮忕殑娑堟伅鏌ヨ API
+ * HTTP API 服务
+ * 提供 ChatLab 标准化格式的消息查询 API
  */
 import * as http from 'http'
 import * as fs from 'fs'
@@ -11,7 +11,7 @@ import { wcdbService } from './wcdbService'
 import { ConfigService } from './config'
 import { videoService } from './videoService'
 
-// ChatLab 鏍煎紡瀹氫箟
+// ChatLab 格式定义
 interface ChatLabHeader {
   version: string
   exportedAt: number
@@ -71,7 +71,7 @@ interface ApiExportedMedia {
   fullPath: string
 }
 
-// ChatLab 娑堟伅绫诲瀷鏄犲皠
+// ChatLab 消息类型映射
 const ChatLabType = {
   TEXT: 0,
   IMAGE: 1,
@@ -106,7 +106,7 @@ class HttpService {
   }
 
   /**
-   * 鍚姩 HTTP 鏈嶅姟
+   * 启动 HTTP 服务
    */
   async start(port: number = 5031): Promise<{ success: boolean; port?: number; error?: string }> {
     if (this.running && this.server) {
@@ -118,7 +118,7 @@ class HttpService {
     return new Promise((resolve) => {
       this.server = http.createServer((req, res) => this.handleRequest(req, res))
 
-      // 璺熻釜鎵€鏈夎繛鎺ワ紝浠ヤ究鍏抽棴鏃惰兘寮哄埗鏂紑
+      // 跟踪所有连接，以便关闭时能强制断开
       this.server.on('connection', (socket) => {
         this.connections.add(socket)
         socket.on('close', () => {
@@ -145,12 +145,12 @@ class HttpService {
   }
 
   /**
-   * 鍋滄 HTTP 鏈嶅姟
+   * 停止 HTTP 服务
    */
   async stop(): Promise<void> {
     return new Promise((resolve) => {
       if (this.server) {
-        // 寮哄埗鍏抽棴鎵€鏈夋椿鍔ㄨ繛鎺?
+        // 强制关闭所有活动连接
         for (const socket of this.connections) {
           socket.destroy()
         }
@@ -170,14 +170,14 @@ class HttpService {
   }
 
   /**
-   * 妫€鏌ユ湇鍔℃槸鍚﹁繍琛?
+   * 检查服务是否运行
    */
   isRunning(): boolean {
     return this.running
   }
 
   /**
-   * 鑾峰彇褰撳墠绔彛
+   * 获取当前端口
    */
   getPort(): number {
     return this.port
@@ -188,10 +188,10 @@ class HttpService {
   }
 
   /**
-   * 澶勭悊 HTTP 璇锋眰
+   * 处理 HTTP 请求
    */
   private async handleRequest(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
-    // 璁剧疆 CORS 澶?
+    // 设置 CORS 头
     res.setHeader('Access-Control-Allow-Origin', '*')
     res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS')
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type')
@@ -206,7 +206,7 @@ class HttpService {
     const pathname = url.pathname
 
     try {
-      // 璺敱澶勭悊
+      // 路由处理
       if (pathname === '/health' || pathname === '/api/v1/health') {
         this.sendJson(res, { status: 'ok' })
       } else if (pathname === '/api/v1/messages') {
@@ -225,8 +225,8 @@ class HttpService {
   }
 
   /**
-   * 鎵归噺鑾峰彇娑堟伅锛堝惊鐜父鏍囩洿鍒版弧瓒?limit锛?
-   * 缁曡繃 chatService 鐨勫崟 batch 闄愬埗锛岀洿鎺ユ搷浣?wcdbService 娓告爣
+   * 批量获取消息（循环游标直到满足 limit）
+   * 绕过 chatService 的单 batch 限制，直接操作 wcdbService 游标
    */
   private async fetchMessagesBatch(
     talker: string,
@@ -237,14 +237,14 @@ class HttpService {
     ascending: boolean
   ): Promise<{ success: boolean; messages?: Message[]; hasMore?: boolean; error?: string }> {
     try {
-      // 浣跨敤鍥哄畾 batch 澶у皬锛堜笌 limit 鐩稿悓鎴栨渶澶?500锛夋潵鍑忓皯寰幆娆℃暟
+      // 使用固定 batch 大小（与 limit 相同或最多 500）来减少循环次数
       const batchSize = Math.min(limit, 500)
       const beginTimestamp = startTime > 10000000000 ? Math.floor(startTime / 1000) : startTime
       const endTimestamp = endTime > 10000000000 ? Math.floor(endTime / 1000) : endTime
 
       const cursorResult = await wcdbService.openMessageCursor(talker, batchSize, ascending, beginTimestamp, endTimestamp)
       if (!cursorResult.success || !cursorResult.cursor) {
-        return { success: false, error: cursorResult.error || '鎵撳紑娑堟伅娓告爣澶辫触' }
+        return { success: false, error: cursorResult.error || '打开消息游标失败' }
       }
 
       const cursor = cursorResult.cursor
@@ -253,7 +253,7 @@ class HttpService {
         let hasMore = true
         let skipped = 0
 
-        // 寰幆鑾峰彇娑堟伅锛屽鐞?offset 璺宠繃 + limit 绱Н
+        // 循环获取消息，处理 offset 跳过 + limit 累积
         while (allRows.length < limit && hasMore) {
           const batch = await wcdbService.fetchMessageBatch(cursor)
           if (!batch.success || !batch.rows || batch.rows.length === 0) {
@@ -264,7 +264,7 @@ class HttpService {
           let rows = batch.rows
           hasMore = batch.hasMore === true
 
-          // 澶勭悊 offset: 璺宠繃鍓?N 鏉?
+          // 处理 offset：跳过前 N 条
           if (skipped < offset) {
             const remaining = offset - skipped
             if (remaining >= rows.length) {
@@ -414,7 +414,7 @@ class HttpService {
   }
 
   /**
-   * 澶勭悊浼氳瘽鍒楄〃鏌ヨ
+   * 处理会话列表查询
    * GET /api/v1/sessions?keyword=xxx&limit=100
    */
   private async handleSessions(url: URL, res: http.ServerResponse): Promise<void> {
@@ -437,7 +437,7 @@ class HttpService {
         )
       }
 
-      // 搴旂敤 limit
+      // 应用 limit
       const limitedSessions = filteredSessions.slice(0, limit)
 
       this.sendJson(res, {
@@ -457,7 +457,7 @@ class HttpService {
   }
 
   /**
-   * 澶勭悊鑱旂郴浜烘煡璇?
+   * 处理联系人查询
    * GET /api/v1/contacts?keyword=xxx&limit=100
    */
   private async handleContacts(url: URL, res: http.ServerResponse): Promise<void> {
@@ -645,29 +645,29 @@ class HttpService {
   }
 
   /**
-   * 瑙ｆ瀽鏃堕棿鍙傛暟
-   * 鏀寔 YYYYMMDD 鏍煎紡锛岃繑鍥炵绾ф椂闂存埑
+   * 解析时间参数
+   * 支持 YYYYMMDD 格式，返回秒级时间戳
    */
   private parseTimeParam(param: string | null, isEnd: boolean = false): number {
     if (!param) return 0
 
-    // 绾暟瀛椾笖闀垮害涓?锛岃涓?YYYYMMDD
+    // 纯数字且长度为 8，视为 YYYYMMDD
     if (/^\d{8}$/.test(param)) {
       const year = parseInt(param.slice(0, 4), 10)
       const month = parseInt(param.slice(4, 6), 10) - 1
       const day = parseInt(param.slice(6, 8), 10)
       const date = new Date(year, month, day)
       if (isEnd) {
-        // 缁撴潫鏃堕棿璁句负褰撳ぉ 23:59:59
+        // 结束时间设为当天 23:59:59
         date.setHours(23, 59, 59, 999)
       }
       return Math.floor(date.getTime() / 1000)
     }
 
-    // 绾暟瀛楋紝瑙嗕负鏃堕棿鎴?
+    // 纯数字，视为时间戳
     if (/^\d+$/.test(param)) {
       const ts = parseInt(param, 10)
-      // 濡傛灉鏄绉掔骇鏃堕棿鎴筹紝杞负绉掔骇
+      // 如果是毫秒级时间戳，转为秒级
       return ts > 10000000000 ? Math.floor(ts / 1000) : ts
     }
 
@@ -675,7 +675,7 @@ class HttpService {
   }
 
   /**
-   * 鑾峰彇鏄剧ず鍚嶇О
+   * 获取显示名称
    */
   private async getDisplayNames(usernames: string[]): Promise<Record<string, string>> {
     try {
@@ -686,12 +686,12 @@ class HttpService {
     } catch (e) {
       console.error('[HttpService] Failed to get display names:', e)
     }
-    // 杩斿洖绌哄璞★紝璋冪敤鏂逛細浣跨敤 username 浣滀负澶囩敤
+    // 返回空对象，调用方会使用 username 作为备用
     return {}
   }
 
   /**
-   * 杞崲涓?ChatLab 鏍煎紡
+   * 转换为 ChatLab 格式
    */
   private async convertToChatLab(
     messages: Message[],
@@ -702,7 +702,7 @@ class HttpService {
     const isGroup = talkerId.endsWith('@chatroom')
     const myWxid = this.configService.get('myWxid') || ''
 
-    // 鏀堕泦鎵€鏈夊彂閫佽€?
+    // 收集所有发送者
     const senderSet = new Set<string>()
     for (const msg of messages) {
       if (msg.senderUsername) {
@@ -710,10 +710,10 @@ class HttpService {
       }
     }
 
-    // 鑾峰彇鍙戦€佽€呮樉绀哄悕
+    // 获取发送者显示名
     const senderNames = await this.getDisplayNames(Array.from(senderSet))
 
-    // 鑾峰彇缇ゆ樀绉帮紙濡傛灉鏄兢鑱婏級
+    // 获取群昵称（如果是群聊）
     let groupNicknamesMap = new Map<string, string>()
     if (isGroup) {
       try {
@@ -726,31 +726,31 @@ class HttpService {
       }
     }
 
-    // 鏋勫缓鎴愬憳鍒楄〃
+    // 构建成员列表
     const memberMap = new Map<string, ChatLabMember>()
     for (const msg of messages) {
       const sender = msg.senderUsername || ''
       if (sender && !memberMap.has(sender)) {
         const displayName = senderNames[sender] || sender
         const isSelf = sender === myWxid || sender.toLowerCase() === myWxid.toLowerCase()
-        // 鑾峰彇缇ゆ樀绉帮紙灏濊瘯澶氱鏂瑰紡锛?
+        // 获取群昵称（尝试多种方式）
         const groupNickname = isGroup 
           ? (groupNicknamesMap.get(sender) || groupNicknamesMap.get(sender.toLowerCase()) || '')
           : ''
         memberMap.set(sender, {
           platformId: sender,
-          accountName: isSelf ? '鎴? : displayName,
+          accountName: isSelf ? '我' : displayName,
           groupNickname: groupNickname || undefined
         })
       }
     }
 
-    // 杞崲娑堟伅
+    // 转换消息
     const chatLabMessages: ChatLabMessage[] = messages.map(msg => {
       const sender = msg.senderUsername || ''
       const isSelf = msg.isSend === 1 || sender === myWxid
-      const accountName = isSelf ? '鎴? : (senderNames[sender] || sender)
-      // 鑾峰彇璇ュ彂閫佽€呯殑缇ゆ樀绉?
+      const accountName = isSelf ? '我' : (senderNames[sender] || sender)
+      // 获取该发送者的群昵称
       const groupNickname = isGroup 
         ? (groupNicknamesMap.get(sender) || groupNicknamesMap.get(sender.toLowerCase()) || '')
         : ''
@@ -786,37 +786,37 @@ class HttpService {
   }
 
   /**
-   * 鏄犲皠 WeChat 娑堟伅绫诲瀷鍒?ChatLab 绫诲瀷
+   * 映射 WeChat 消息类型到 ChatLab 类型
    */
   private mapMessageType(localType: number, msg: Message): number {
     switch (localType) {
-      case 1: // 鏂囨湰
+      case 1: // 文本
         return ChatLabType.TEXT
-      case 3: // 鍥剧墖
+      case 3: // 图片
         return ChatLabType.IMAGE
-      case 34: // 璇煶
+      case 34: // 语音
         return ChatLabType.VOICE
-      case 43: // 瑙嗛
+      case 43: // 视频
         return ChatLabType.VIDEO
-      case 47: // 鍔ㄧ敾琛ㄦ儏
+      case 47: // 动画表情
         return ChatLabType.EMOJI
-      case 48: // 浣嶇疆
+      case 48: // 位置
         return ChatLabType.LOCATION
-      case 42: // 鍚嶇墖
+      case 42: // 名片
         return ChatLabType.CONTACT
-      case 50: // 璇煶/瑙嗛閫氳瘽
+      case 50: // 语音/视频通话
         return ChatLabType.CALL
-      case 10000: // 绯荤粺娑堟伅
+      case 10000: // 系统消息
         return ChatLabType.SYSTEM
-      case 49: // 澶嶅悎娑堟伅
+      case 49: // 复合消息
         return this.mapType49(msg)
-      case 244813135921: // 寮曠敤娑堟伅
+      case 244813135921: // 引用消息
         return ChatLabType.REPLY
-      case 266287972401: // 鎷嶄竴鎷?
+      case 266287972401: // 拍一拍
         return ChatLabType.POKE
-      case 8594229559345: // 绾㈠寘
+      case 8594229559345: // 红包
         return ChatLabType.RED_PACKET
-      case 8589934592049: // 杞处
+      case 8589934592049: // 转账
         return ChatLabType.TRANSFER
       default:
         return ChatLabType.OTHER
@@ -824,27 +824,27 @@ class HttpService {
   }
 
   /**
-   * 鏄犲皠 Type 49 瀛愮被鍨?
+   * 映射 Type 49 子类型
    */
   private mapType49(msg: Message): number {
     const xmlType = msg.xmlType
 
     switch (xmlType) {
-      case '5': // 閾炬帴
+      case '5': // 链接
       case '49':
         return ChatLabType.LINK
-      case '6': // 鏂囦欢
+      case '6': // 文件
         return ChatLabType.FILE
-      case '19': // 鑱婂ぉ璁板綍
+      case '19': // 聊天记录
         return ChatLabType.FORWARD
-      case '33': // 灏忕▼搴?
+      case '33': // 小程序
       case '36':
         return ChatLabType.SHARE
-      case '57': // 寮曠敤娑堟伅
+      case '57': // 引用消息
         return ChatLabType.REPLY
-      case '2000': // 杞处
+      case '2000': // 转账
         return ChatLabType.TRANSFER
-      case '2001': // 绾㈠寘
+      case '2001': // 红包
         return ChatLabType.RED_PACKET
       default:
         return ChatLabType.OTHER
@@ -852,15 +852,15 @@ class HttpService {
   }
 
   /**
-   * 鑾峰彇娑堟伅鍐呭
+   * 获取消息内容
    */
   private getMessageContent(msg: Message): string | null {
-    // 浼樺厛浣跨敤宸茶В鏋愮殑鍐呭
+    // 优先使用已解析的内容
     if (msg.parsedContent) {
       return msg.parsedContent
     }
 
-    // 鏍规嵁绫诲瀷杩斿洖鍗犱綅绗?
+    // 根据类型返回占位符
     switch (msg.localType) {
       case 1:
         return msg.rawContent || null
@@ -884,7 +884,7 @@ class HttpService {
   }
 
   /**
-   * 鍙戦€?JSON 鍝嶅簲
+   * 发送 JSON 响应
    */
   private sendJson(res: http.ServerResponse, data: any): void {
     res.setHeader('Content-Type', 'application/json; charset=utf-8')
@@ -893,7 +893,7 @@ class HttpService {
   }
 
   /**
-   * 鍙戦€侀敊璇搷搴?
+   * 发送错误响应
    */
   private sendError(res: http.ServerResponse, code: number, message: string): void {
     res.setHeader('Content-Type', 'application/json; charset=utf-8')
